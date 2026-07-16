@@ -62,6 +62,7 @@ export default function ApprovePage() {
       const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
       const onLoginComplete = (error: unknown, result: any) => {
+        alert("onLoginComplete called. error=" + JSON.stringify(error) + " result=" + JSON.stringify(result));
         if (cancelled) return;
         if (error) {
           setStatus("ログイン結果なし（未ログイン状態）");
