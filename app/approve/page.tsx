@@ -108,6 +108,7 @@ export default function ApprovePage() {
         },
       };
 
+      alert("initialConfig=" + JSON.stringify(initialConfig));
       const sdk = new W3SSdk(initialConfig, onLoginComplete);
       sdkRef.current = sdk;
 
