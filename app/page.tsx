@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { setCookie, getCookie } from "cookies-next";
+import { setCookie, getCookie, deleteCookie } from "cookies-next";
 import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 
@@ -37,6 +37,14 @@ export default function Home() {
   const [whitelistResult, setWhitelistResult] = useState<string | null>(null);
   const [batchResult, setBatchResult] = useState<string | null>(null);
   const [approverLink, setApproverLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    const redirect = getCookie("postLoginRedirect") as string | undefined;
+    if (redirect && redirect !== "/" && window.location.pathname === "/") {
+      deleteCookie("postLoginRedirect");
+      window.location.href = redirect;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

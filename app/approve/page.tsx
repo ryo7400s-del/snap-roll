@@ -151,6 +151,7 @@ export default function ApprovePage() {
       return;
     }
 
+    setCookie("postLoginRedirect", window.location.pathname + window.location.search);
     setCookie("appId", appId);
     setCookie("google.clientId", googleClientId);
     setCookie("deviceToken", deviceToken);
