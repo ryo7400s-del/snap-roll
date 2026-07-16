@@ -42,10 +42,17 @@ export default function ApprovePage() {
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
   const [schedulerAddress, setSchedulerAddress] = useState("");
 
+  // URLのscheduler paramをCookieに保存し、リダイレクト後も維持する
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("scheduler");
-    if (s) setSchedulerAddress(s);
+    if (s) {
+      setSchedulerAddress(s);
+      setCookie("pendingSchedulerAddress", s);
+    } else {
+      const saved = getCookie("pendingSchedulerAddress") as string | undefined;
+      if (saved) setSchedulerAddress(saved);
+    }
   }, []);
 
   useEffect(() => {
@@ -93,7 +100,8 @@ export default function ApprovePage() {
           deviceEncryptionKey: restoredDeviceEncryptionKey,
           google: {
             clientId: restoredGoogleClientId,
-            redirectUri: typeof window !== "undefined" ? window.location.origin + window.location.pathname + window.location.search : "",
+            // オリジンのみに統一（クエリ付きURLはGoogle OAuth側で個別登録が必要になるため）
+            redirectUri: typeof window !== "undefined" ? window.location.origin : "",
             selectAccountPrompt: true,
           },
         },
@@ -155,7 +163,7 @@ export default function ApprovePage() {
         deviceEncryptionKey,
         google: {
           clientId: googleClientId,
-          redirectUri: window.location.origin + window.location.pathname + window.location.search,
+          redirectUri: window.location.origin,
           selectAccountPrompt: true,
         },
       },
@@ -197,7 +205,6 @@ export default function ApprovePage() {
     }
   };
 
-  // 個別承認：createScheduleFor(recipient, amount, executeAfter, requestId)
   const handleApprove = async (item: PendingSchedule) => {
     const sdk = sdkRef.current;
     if (!sdk || !loginResult || wallets.length === 0) {
@@ -206,7 +213,6 @@ export default function ApprovePage() {
     }
 
     const walletId = wallets[0].id;
-    // requestIdとしてDBのidをそのままbytes32化（先頭0埋め）
     const requestId = "0x" + item.id.replace(/-/g, "").padStart(64, "0");
 
     const res = await fetch("/api/circle", {
