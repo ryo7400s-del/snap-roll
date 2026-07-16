@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       if (!approverId) {
         await sendTelegramMessage(
           chatId,
-          "このBotはArc Payrollの承認通知専用です。アプリ内の登録リンクからアクセスしてください。"
+          "This bot is for Arc Payroll approval notifications only. Please access it via the registration link inside the app."
         );
         return NextResponse.json({ ok: true });
       }
@@ -53,13 +53,13 @@ export async function POST(request: Request) {
         .single();
 
       if (error || !data) {
-        await sendTelegramMessage(chatId, "登録に失敗しました。もう一度お試しください。");
+        await sendTelegramMessage(chatId, "Registration failed. Please try again.");
         return NextResponse.json({ ok: true });
       }
 
       await sendTelegramMessage(
         chatId,
-        "✅ 通知登録が完了しました。給与スケジュールの承認依頼が届くとここに通知します。"
+        "✅ Notification registration complete. You will be notified here when a payroll schedule needs approval."
       );
       return NextResponse.json({ ok: true });
     }
