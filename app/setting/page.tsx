@@ -42,13 +42,37 @@ export default function SettingPage() {
     window.localStorage.setItem(SCHEDULER_STORAGE_KEY, addr);
   };
 
-  // --- コントラクトのデプロイ＆レジスター -----------------------------
+  const handleManualSchedulerSave = (addr: string) => {
+    persistScheduler(addr);
+  };
+
+  // コントラクトのデプロイ＆レジスター。
+  // 「一ウォレット一コントラクト」制約があるため、まずcomputeAddress+hasDeployedで
+  // 既にデプロイ済みかどうかを確認する。既にあればそのアドレスをそのまま使い、
+  // 未デプロイならdeploy()を実行してからレジスターまで自動で進める。
   const handleDeploy = async () => {
     if (!loginResult || !wallet) {
       setDeployStatus("先にログインしてください");
       return;
     }
     setDeploying(true);
+    setDeployStatus("確認中...");
+
+    const checkRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "computeAddress", ownerAddress: wallet.address }),
+    });
+    const checkData = await checkRes.json();
+
+    if (checkData.alreadyDeployed) {
+      persistScheduler(checkData.predicted);
+      setDeployStatus("既にデプロイ済みのコントラクトを使用します。責任者として登録します...");
+      await handleRegisterApprover(checkData.predicted);
+      setDeploying(false);
+      return;
+    }
+
     setDeployStatus("デプロイ中...");
 
     const res = await fetch("/api/circle", {
@@ -79,21 +103,17 @@ export default function SettingPage() {
       encryptionKey: loginResult.encryptionKey,
     });
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
-      setDeploying(false);
       if (error) {
+        setDeploying(false);
         setDeployStatus("デプロイ失敗: " + JSON.stringify(error));
         return;
       }
-      setDeployStatus("デプロイ成功。コントラクトを登録しています...");
-
-      // レジスターAPI呼び出し（アドレス自体はイベントログから取得すべきだが、
-      // 簡易実装として一定時間後に承認済みscheduler一覧などから引く運用にする）
-      setDeployStatus("デプロイ成功。ArcScanでコントラクトアドレスをご確認のうえ、下の欄に貼り付けてください。");
+      setDeployStatus("デプロイ成功。アドレスを確認しています...");
+      persistScheduler(checkData.predicted);
+      setDeployStatus("コントラクトを登録しています...");
+      await handleRegisterApprover(checkData.predicted);
+      setDeploying(false);
     });
-  };
-
-  const handleManualSchedulerSave = (addr: string) => {
-    persistScheduler(addr);
   };
 
   // --- ホワイトリスト登録 ---------------------------------------------
@@ -172,8 +192,9 @@ export default function SettingPage() {
   };
 
   // --- Telegram連携 -----------------------------------------------------
-  const handleRegisterApprover = async () => {
-    if (!wallet || !schedulerAddress) {
+  const handleRegisterApprover = async (addressOverride?: string) => {
+    const targetAddress = addressOverride ?? schedulerAddress;
+    if (!wallet || !targetAddress) {
       setTelegramStatus("先にウォレット取得・コントラクト設定が必要です");
       return;
     }
@@ -184,7 +205,7 @@ export default function SettingPage() {
       body: JSON.stringify({
         action: "register",
         walletAddress: wallet.address,
-        schedulerAddress,
+        schedulerAddress: targetAddress,
       }),
     });
     const data = await res.json();

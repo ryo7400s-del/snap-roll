@@ -84,6 +84,16 @@ export async function POST(request: Request) {
         const data = await res.json();
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
+
+      case "computeAddress": {
+        const { ownerAddress } = params;
+        const { ethers } = await import("ethers");
+        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+        const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
+        const factory = new ethers.Contract("0x0BECA7A71062830C0De5320c3EB6892099DDF9D2", abi, provider);
+        const predicted = await factory.computeAddress(ethers.getAddress(ownerAddress));
+        const alreadyDeployed = await factory.hasDeployed(ethers.getAddress(ownerAddress));
+        return NextResponse.json({ predicted, alreadyDeployed }, { status: 200 });
       }
 
       case "deployFactory": {
