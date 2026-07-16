@@ -9,15 +9,23 @@ const supabase = createClient(
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
 const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_BASE_URL as string;
 
-async function sendTelegramMessage(chatId: string, text: string) {
+async function sendTelegramMessage(
+  chatId: string,
+  text: string,
+  inlineKeyboard?: { text: string; url?: string; callback_data?: string }[][]
+) {
+  const body: any = {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+  };
+  if (inlineKeyboard) {
+    body.reply_markup = { inline_keyboard: inlineKeyboard };
+  }
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-    }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -81,12 +89,26 @@ export async function POST(request: Request) {
 
           const message =
             `📋 New payroll schedule approval request\n\n` +
-            `recipient,amount,executeAfter\n${csvLines}\n\n` +
-            `Approve here: ${approvalUrl}`;
+            `recipient,amount,executeAfter\n${csvLines}`;
 
+          // 申請ごとに1件ずつボタンを出す（拒否は個別に処理するため）
           for (const approver of approvers) {
-            if (approver.telegram_chat_id) {
-              await sendTelegramMessage(approver.telegram_chat_id, message);
+            if (!approver.telegram_chat_id) continue;
+
+            await sendTelegramMessage(approver.telegram_chat_id, message);
+
+            for (const row of data) {
+              const rowText =
+                `Recipient: ${row.recipient}\n` +
+                `Amount: ${row.amount}\n` +
+                `Execute after: ${new Date(row.execute_after * 1000).toISOString()}`;
+
+              await sendTelegramMessage(approver.telegram_chat_id, rowText, [
+                [
+                  { text: "✅ Open approval page", url: approvalUrl },
+                  { text: "❌ Reject", callback_data: `reject:${row.id}` },
+                ],
+              ]);
             }
           }
         }
@@ -129,6 +151,27 @@ export async function POST(request: Request) {
             approved_at: new Date().toISOString(),
             tx_hash: txHash || null,
           })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json(data, { status: 200 });
+      }
+
+      // 拒否処理：署名不要のためTelegramのボタンから直接呼べる
+      case "reject": {
+        const { id } = params;
+        if (!id) {
+          return NextResponse.json({ error: "Missing id" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("pending_schedules")
+          .update({ status: "rejected" })
           .eq("id", id)
           .select()
           .single();
