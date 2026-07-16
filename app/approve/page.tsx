@@ -48,9 +48,9 @@ export default function ApprovePage() {
     const s = params.get("scheduler");
     if (s) {
       setSchedulerAddress(s);
-      setCookie("pendingSchedulerAddress", s);
+      window.localStorage.setItem("pendingSchedulerAddress", s);
     } else {
-      const saved = getCookie("pendingSchedulerAddress") as string | undefined;
+      const saved = window.localStorage.getItem("pendingSchedulerAddress");
       if (saved) setSchedulerAddress(saved);
     }
   }, []);
@@ -62,7 +62,6 @@ export default function ApprovePage() {
       const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
       const onLoginComplete = (error: unknown, result: any) => {
-        alert("onLoginComplete called. error=" + JSON.stringify(error) + " result=" + JSON.stringify(result));
         if (cancelled) return;
         if (error) {
           setStatus("ログイン結果なし（未ログイン状態）");
@@ -108,7 +107,6 @@ export default function ApprovePage() {
         },
       };
 
-      alert("Page loaded at " + Date.now() + ". loginStartedAt in session: " + sessionStorage.getItem("loginStartedAt"));
       const sdk = new W3SSdk(initialConfig, onLoginComplete);
       sdkRef.current = sdk;
 
