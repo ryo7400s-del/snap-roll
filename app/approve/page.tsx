@@ -108,7 +108,7 @@ export default function ApprovePage() {
         },
       };
 
-      alert("initialConfig=" + JSON.stringify(initialConfig));
+      alert("Page loaded at " + Date.now() + ". loginStartedAt in session: " + sessionStorage.getItem("loginStartedAt"));
       const sdk = new W3SSdk(initialConfig, onLoginComplete);
       sdkRef.current = sdk;
 
@@ -173,6 +173,7 @@ export default function ApprovePage() {
     });
 
     setStatus("Googleへリダイレクト中...");
+    sessionStorage.setItem("loginStartedAt", Date.now().toString());
     sdk.performLogin(SocialLoginProvider.GOOGLE);
   };
 
