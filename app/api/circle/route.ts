@@ -67,6 +67,25 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      case "getBalance": {
+        const { userToken, walletId } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/wallets/${walletId}/balances`,
+          {
+            method: "GET",
+            headers: {
+              accept: "application/json",
+              "content-type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "deployFactory": {
         const { userToken, walletId } = params;
         const res = await fetch(

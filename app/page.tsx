@@ -8,9 +8,6 @@ import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
 
-const SCHEDULER_ADDRESS = "0x2478DB80727eF7AD46337bd53c17c7b6fca16a4b";
-const TELEGRAM_BOT_USERNAME = "arc_payroll_approval_bot"; // 例: arc_payroll_approval_bot
-
 type LoginResult = {
   userToken: string;
   encryptionKey: string;
@@ -23,6 +20,11 @@ type Wallet = {
   [key: string]: unknown;
 };
 
+type TokenBalance = {
+  amount: string;
+  token: { symbol?: string; name?: string };
+};
+
 export default function Home() {
   const sdkRef = useRef<W3SSdk | null>(null);
 
@@ -31,13 +33,12 @@ export default function Home() {
   const [deviceToken, setDeviceToken] = useState("");
   const [deviceEncryptionKey, setDeviceEncryptionKey] = useState("");
   const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [status, setStatus] = useState("初期化前");
-  const [deployResult, setDeployResult] = useState<string | null>(null);
-  const [whitelistResult, setWhitelistResult] = useState<string | null>(null);
-  const [batchResult, setBatchResult] = useState<string | null>(null);
-  const [approverLink, setApproverLink] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [balances, setBalances] = useState<TokenBalance[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  // ルートリダイレクト転送（Google OAuthが他ページからでも一度ここを経由するため）
   useEffect(() => {
     const redirect = getCookie("postLoginRedirect") as string | undefined;
     if (redirect && redirect !== "/" && window.location.pathname === "/") {
@@ -56,13 +57,13 @@ export default function Home() {
         if (cancelled) return;
         if (error) {
           console.log("Login failed:", error);
-          setStatus("ログイン結果なし（未ログイン状態）");
           return;
         }
         setLoginResult({
           userToken: result.userToken,
           encryptionKey: result.encryptionKey,
         });
+
         {
           const redirectTo = window.localStorage.getItem("postLoginRedirect");
           if (redirectTo && redirectTo !== "/") {
@@ -72,7 +73,6 @@ export default function Home() {
             return;
           }
         }
-        setStatus("ログイン成功。ユーザー初期化中...");
 
         fetch("/api/circle", {
           method: "POST",
@@ -81,7 +81,7 @@ export default function Home() {
             action: "initializeUser",
             userToken: result.userToken,
           }),
-        }).then(() => setStatus("ログイン成功。ウォレット一覧を取得できます"));
+        });
       };
 
       const restoredAppId = (getCookie("appId") as string) || appId || "";
@@ -112,7 +112,6 @@ export default function Home() {
 
       if (!cancelled) {
         setSdkReady(true);
-        setStatus("SDK初期化完了");
       }
     })();
 
@@ -121,6 +120,7 @@ export default function Home() {
     };
   }, []);
 
+  // deviceId取得
   useEffect(() => {
     (async () => {
       if (!sdkRef.current || !sdkReady) return;
@@ -138,8 +138,10 @@ export default function Home() {
     })();
   }, [sdkReady]);
 
-  const handleCreateDeviceToken = async () => {
-    if (!deviceId) return setStatus("deviceId未取得");
+  // deviceId取得後、自動でデバイストークン発行→ログイン導線を用意
+  const ensureDeviceToken = async () => {
+    if (deviceToken) return deviceToken;
+    if (!deviceId) return null;
     const res = await fetch("/api/circle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -150,25 +152,23 @@ export default function Home() {
     setDeviceEncryptionKey(data.deviceEncryptionKey);
     setCookie("deviceToken", data.deviceToken);
     setCookie("deviceEncryptionKey", data.deviceEncryptionKey);
-    setStatus("デバイストークン作成完了");
+    return data.deviceToken as string;
   };
 
-  const handleLoginWithGoogle = () => {
+  const handleLogin = async () => {
     const sdk = sdkRef.current;
-    if (!sdk || !deviceToken || !deviceEncryptionKey) {
-      setStatus("先にデバイストークンを作成してください");
-      return;
-    }
+    if (!sdk) return;
+
+    const token = await ensureDeviceToken();
+    if (!token) return;
 
     setCookie("appId", appId);
     setCookie("google.clientId", googleClientId);
-    setCookie("deviceToken", deviceToken);
-    setCookie("deviceEncryptionKey", deviceEncryptionKey);
 
     sdk.updateConfigs({
       appSettings: { appId },
       loginConfigs: {
-        deviceToken,
+        deviceToken: token,
         deviceEncryptionKey,
         google: {
           clientId: googleClientId,
@@ -178,244 +178,278 @@ export default function Home() {
       },
     });
 
-    setStatus("Googleへリダイレクト中...");
     sdk.performLogin(SocialLoginProvider.GOOGLE);
   };
 
-  const handleListWallets = async () => {
-    if (!loginResult?.userToken) return setStatus("先にログインしてください");
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "listWallets", userToken: loginResult.userToken }),
-    });
-    const data = await res.json();
-    if (data.wallets) {
-      setWallets(data.wallets);
-      setStatus(`ウォレット ${data.wallets.length} 件取得`);
-    } else {
-      setStatus("ウォレット取得失敗: " + JSON.stringify(data));
-    }
-  };
+  // ログイン結果が入ったら自動でウォレット・残高取得
+  useEffect(() => {
+    (async () => {
+      if (!loginResult?.userToken) return;
+      setLoading(true);
 
-  const handleDeployTest = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk || !loginResult || wallets.length === 0) {
-      setStatus("ログイン・ウォレット取得が先に必要です");
-      return;
-    }
-
-    const walletId = wallets[0].id;
-
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "deployFactory",
-        userToken: loginResult.userToken,
-        walletId,
-      }),
-    });
-    const data = await res.json();
-
-    if (!data.challengeId) {
-      setDeployResult("チャレンジ作成失敗: " + JSON.stringify(data));
-      return;
-    }
-
-    sdk.setAuthentication({
-      userToken: loginResult.userToken,
-      encryptionKey: loginResult.encryptionKey,
-    });
-    sdk.execute(data.challengeId, (error, result) => {
-      if (error) {
-        setDeployResult("デプロイ失敗: " + JSON.stringify(error));
+      const walletsRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "listWallets", userToken: loginResult.userToken }),
+      });
+      const walletsData = await walletsRes.json();
+      const w = walletsData.wallets?.[0];
+      if (!w) {
+        setLoading(false);
         return;
       }
-      setDeployResult("デプロイ成功: " + JSON.stringify(result));
-    });
+      setWallet(w);
+
+      const balanceRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "getBalance",
+          userToken: loginResult.userToken,
+          walletId: w.id,
+        }),
+      });
+      const balanceData = await balanceRes.json();
+      setBalances(balanceData.tokenBalances || []);
+      setLoading(false);
+    })();
+  }, [loginResult]);
+
+  const usdcBalance = balances.find(
+    (b) => b.token?.symbol === "USDC"
+  );
+
+  const handleCopyAddress = () => {
+    if (!wallet?.address) return;
+    navigator.clipboard.writeText(wallet.address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleWhitelistBatch = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk || !loginResult || wallets.length === 0) {
-      setStatus("ログイン・ウォレット取得が先に必要です");
-      return;
-    }
-
-    const walletId = wallets[0].id;
-    const myAddress = wallets[0].address;
-
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "whitelistBatch",
-        userToken: loginResult.userToken,
-        walletId,
-        schedulerAddress: SCHEDULER_ADDRESS,
-        accounts: [myAddress],
-      }),
-    });
-    const data = await res.json();
-
-    if (!data.challengeId) {
-      setWhitelistResult("チャレンジ作成失敗: " + JSON.stringify(data));
-      return;
-    }
-
-    sdk.setAuthentication({
-      userToken: loginResult.userToken,
-      encryptionKey: loginResult.encryptionKey,
-    });
-    sdk.execute(data.challengeId, (error, result) => {
-      if (error) {
-        setWhitelistResult("whitelist登録失敗: " + JSON.stringify(error));
-        return;
-      }
-      setWhitelistResult("whitelist登録成功: " + JSON.stringify(result));
-    });
-  };
-
-  const handleCreateSchedulesBatch = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk || !loginResult || wallets.length === 0) {
-      setStatus("ログイン・ウォレット取得が先に必要です");
-      return;
-    }
-
-    const walletId = wallets[0].id;
-    const myAddress = wallets[0].address;
-    const now = Math.floor(Date.now() / 1000);
-
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "createSchedulesBatch",
-        userToken: loginResult.userToken,
-        walletId,
-        schedulerAddress: SCHEDULER_ADDRESS,
-        recipients: [myAddress, myAddress, myAddress],
-        amounts: ["1000000", "2000000", "3000000"],
-        executeAfters: [now, now + 60, now + 120],
-      }),
-    });
-    const data = await res.json();
-
-    if (!data.challengeId) {
-      setBatchResult("チャレンジ作成失敗: " + JSON.stringify(data));
-      return;
-    }
-
-    sdk.setAuthentication({
-      userToken: loginResult.userToken,
-      encryptionKey: loginResult.encryptionKey,
-    });
-    sdk.execute(data.challengeId, (error, result) => {
-      if (error) {
-        setBatchResult("バッチ登録失敗: " + JSON.stringify(error));
-        return;
-      }
-      setBatchResult("バッチ登録成功: " + JSON.stringify(result));
-    });
-  };
-
-  // ③ 責任者としてTelegram通知を登録する（Deep Linkを発行）
-  const handleRegisterApprover = async () => {
-    if (wallets.length === 0) {
-      setStatus("先にウォレットを取得してください");
-      return;
-    }
-
-    const myAddress = wallets[0].address;
-
-    const res = await fetch("/api/approver", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "register",
-        walletAddress: myAddress,
-        schedulerAddress: SCHEDULER_ADDRESS,
-      }),
-    });
-    const data = await res.json();
-
-    if (!data.id) {
-      setStatus("責任者登録失敗: " + JSON.stringify(data));
-      return;
-    }
-
-    const link = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${data.id}`;
-    setApproverLink(link);
-    setStatus("責任者登録完了。下記リンクからTelegramで通知を有効化してください");
-  };
+  const truncatedAddress = wallet
+    ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`
+    : "";
 
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>Circleウォレット接続テスト</h1>
-      <p>ステータス: {status}</p>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
-        <button onClick={handleCreateDeviceToken} disabled={!deviceId}>
-          ① デバイストークン作成
-        </button>
-        <button onClick={handleLoginWithGoogle} disabled={!deviceToken}>
-          ② Googleでログイン
-        </button>
-        <button onClick={handleListWallets} disabled={!loginResult}>
-          ③ ウォレット一覧取得
-        </button>
-        <button onClick={handleDeployTest} disabled={wallets.length === 0}>
-          ④ Factory.deploy() 実行（テスト）
-        </button>
-        <button onClick={handleWhitelistBatch} disabled={wallets.length === 0}>
-          ⑤ addToWhitelistBatch 実行
-        </button>
-        <button onClick={handleCreateSchedulesBatch} disabled={wallets.length === 0}>
-          ⑥ createSchedulesBatch 実行
-        </button>
-        <button onClick={handleRegisterApprover} disabled={wallets.length === 0}>
-          ⑦ 責任者としてTelegram通知登録
-        </button>
+    <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 28,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 12,
+              background: "linear-gradient(135deg,#2E5CFF,#5B8CFF)",
+            }}
+          />
+          <span style={{ fontSize: 17, fontWeight: 700, color: "#0B1220" }}>
+            Payroll Wallet
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#2E5CFF",
+            background: "#EAF0FF",
+            padding: "5px 10px",
+            borderRadius: 20,
+          }}
+        >
+          Arc Testnet
+        </div>
       </div>
 
-      {wallets.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <h3>ウォレット</h3>
-          <pre>{JSON.stringify(wallets, null, 2)}</pre>
+      {!loginResult ? (
+        // 未ログイン状態
+        <div style={{ textAlign: "center", marginTop: 60 }}>
+          <p style={{ fontSize: 13, color: "#6B7688", marginBottom: 16 }}>
+            Sign in to view your payroll wallet
+          </p>
+          <button
+            onClick={handleLogin}
+            disabled={!deviceId}
+            style={{
+              background: "#2E5CFF",
+              border: "none",
+              borderRadius: 12,
+              padding: "12px 24px",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Sign in with Google
+          </button>
         </div>
-      )}
+      ) : (
+        <>
+          {/* Balance */}
+          <div style={{ textAlign: "center", marginBottom: 26 }}>
+            <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 6 }}>
+              Total Balance
+            </div>
+            <div
+              style={{
+                fontSize: 42,
+                fontWeight: 800,
+                color: "#0B1220",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              {loading
+                ? "..."
+                : usdcBalance
+                ? `$${Number(usdcBalance.amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : "$0.00"}
+            </div>
+          </div>
 
-      {deployResult && (
-        <div style={{ marginTop: 16 }}>
-          <h3>デプロイ結果</h3>
-          <pre>{deployResult}</pre>
-        </div>
-      )}
+          {/* Actions */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+              marginBottom: 30,
+            }}
+          >
+            <button
+              disabled
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                padding: "16px 0",
+                background: "#EAF0FF",
+                border: "none",
+                borderRadius: 18,
+                cursor: "not-allowed",
+                opacity: 0.6,
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  background: "#2E5CFF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5}>
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#2E5CFF" }}>Send</span>
+              <span style={{ fontSize: 9, color: "#9AA3B2" }}>Coming soon</span>
+            </button>
 
-      {whitelistResult && (
-        <div style={{ marginTop: 16 }}>
-          <h3>Whitelistバッチ結果</h3>
-          <pre>{whitelistResult}</pre>
-        </div>
-      )}
+            <button
+              onClick={handleCopyAddress}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                padding: "16px 0",
+                background: "#EAF0FF",
+                border: "none",
+                borderRadius: 18,
+                cursor: "pointer",
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  background: "#2E5CFF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#2E5CFF" }}>
+                {copied ? "Copied!" : "Receive"}
+              </span>
+              <span style={{ fontSize: 9, color: "#9AA3B2" }}>
+                {truncatedAddress || "..."}
+              </span>
+            </button>
+          </div>
 
-      {batchResult && (
-        <div style={{ marginTop: 16 }}>
-          <h3>スケジュールバッチ結果</h3>
-          <pre>{batchResult}</pre>
-        </div>
+          {/* Coins */}
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginBottom: 12 }}>
+            Coins
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 14px",
+                background: "#FFFFFF",
+                border: "1px solid #EEF1F6",
+                borderRadius: 16,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    background: "#2775CA",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#fff",
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  US
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                    USD Coin
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9AA3B2" }}>
+                    {usdcBalance ? `${usdcBalance.amount} USDC` : "0 USDC"}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                {usdcBalance ? `$${usdcBalance.amount}` : "$0.00"}
+              </div>
+            </div>
+          </div>
+        </>
       )}
-
-      {approverLink && (
-        <div style={{ marginTop: 16 }}>
-          <h3>Telegram通知登録リンク</h3>
-          <a href={approverLink} target="_blank" rel="noopener noreferrer">
-            {approverLink}
-          </a>
-        </div>
-      )}
-    </main>
+    </div>
   );
 }
