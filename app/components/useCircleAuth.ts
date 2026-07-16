@@ -96,7 +96,6 @@ export function useCircleAuth() {
       const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
       const onLoginComplete = (error: unknown, result: any) => {
-        alert("onLoginComplete fired. error=" + JSON.stringify(error) + " result=" + JSON.stringify(result));
         if (cancelled) return;
         if (error) {
           console.log("Login failed:", error);

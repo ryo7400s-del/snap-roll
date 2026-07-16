@@ -92,10 +92,6 @@ export default function Home() {
           Arc Testnet
         </div>
       </div>
-
-      <pre style={{ fontSize: 10, background: "#eee", padding: 8, marginBottom: 10 }}>
-        {JSON.stringify({ restoring, hasLoginResult: !!loginResult, hasWallet: !!wallet, wallet }, null, 2)}
-      </pre>
       {restoring ? null : !loginResult ? (
         <div style={{ textAlign: "center", marginTop: 60 }}>
           <p style={{ fontSize: 13, color: "#6B7688", marginBottom: 16 }}>
