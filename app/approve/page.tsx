@@ -59,6 +59,19 @@ export default function ApprovePage() {
     let cancelled = false;
 
     (async () => {
+      const pending = window.localStorage.getItem("pendingLoginResult");
+      if (pending) {
+        window.localStorage.removeItem("pendingLoginResult");
+        const parsed = JSON.parse(pending);
+        setLoginResult({ userToken: parsed.userToken, encryptionKey: parsed.encryptionKey });
+        setStatus("ログイン成功（引き継ぎ）。ユーザー初期化中...");
+        fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "initializeUser", userToken: parsed.userToken }),
+        }).then(() => setStatus("ログイン成功。ウォレット一覧を取得できます"));
+      }
+
       const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
       const onLoginComplete = (error: unknown, result: any) => {
@@ -151,7 +164,7 @@ export default function ApprovePage() {
       return;
     }
 
-    setCookie("postLoginRedirect", window.location.pathname + window.location.search);
+    window.localStorage.setItem("postLoginRedirect", window.location.pathname + window.location.search);
     setCookie("appId", appId);
     setCookie("google.clientId", googleClientId);
     setCookie("deviceToken", deviceToken);

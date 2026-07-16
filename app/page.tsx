@@ -63,6 +63,15 @@ export default function Home() {
           userToken: result.userToken,
           encryptionKey: result.encryptionKey,
         });
+        {
+          const redirectTo = window.localStorage.getItem("postLoginRedirect");
+          if (redirectTo && redirectTo !== "/") {
+            window.localStorage.setItem("pendingLoginResult", JSON.stringify(result));
+            window.localStorage.removeItem("postLoginRedirect");
+            window.location.href = redirectTo;
+            return;
+          }
+        }
         setStatus("ログイン成功。ユーザー初期化中...");
 
         fetch("/api/circle", {
