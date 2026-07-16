@@ -151,6 +151,11 @@ export default function SettingPage() {
       return;
     }
 
+    if (!sdk) {
+      setWhitelistStatus("SDKが初期化されていません。ページを再読み込みしてください。");
+      return;
+    }
+
     sdk.setAuthentication({
       userToken: loginResult.userToken,
       encryptionKey: loginResult.encryptionKey,
