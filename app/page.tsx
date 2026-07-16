@@ -1,223 +1,48 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { setCookie, getCookie, deleteCookie } from "cookies-next";
-import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
-import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-
-const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
-const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
-
-type LoginResult = {
-  userToken: string;
-  encryptionKey: string;
-};
-
-type Wallet = {
-  id: string;
-  address: string;
-  blockchain: string;
-  [key: string]: unknown;
-};
+import { useEffect, useState } from "react";
+import { useCircleAuth } from "./components/useCircleAuth";
 
 type TokenBalance = {
   amount: string;
   token: { symbol?: string; name?: string };
 };
 
-export default function Home() {
-  const sdkRef = useRef<W3SSdk | null>(null);
+function formatAmount(amount: string, digits = 2) {
+  const n = Number(amount);
+  if (Number.isNaN(n)) return "0.00";
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
 
-  const [sdkReady, setSdkReady] = useState(false);
-  const [deviceId, setDeviceId] = useState("");
-  const [deviceToken, setDeviceToken] = useState("");
-  const [deviceEncryptionKey, setDeviceEncryptionKey] = useState("");
-  const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+export default function Home() {
+  const { deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // ルートリダイレクト転送（Google OAuthが他ページからでも一度ここを経由するため）
-  useEffect(() => {
-    const redirect = getCookie("postLoginRedirect") as string | undefined;
-    if (redirect && redirect !== "/" && window.location.pathname === "/") {
-      deleteCookie("postLoginRedirect");
-      window.location.href = redirect;
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
-
-      const onLoginComplete = (error: unknown, result: any) => {
-        if (cancelled) return;
-        if (error) {
-          console.log("Login failed:", error);
-          return;
-        }
-        setLoginResult({
-          userToken: result.userToken,
-          encryptionKey: result.encryptionKey,
-        });
-
-        {
-          const redirectTo = window.localStorage.getItem("postLoginRedirect");
-          if (redirectTo && redirectTo !== "/") {
-            window.localStorage.setItem("pendingLoginResult", JSON.stringify(result));
-            window.localStorage.removeItem("postLoginRedirect");
-            window.location.href = redirectTo;
-            return;
-          }
-        }
-
-        fetch("/api/circle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "initializeUser",
-            userToken: result.userToken,
-          }),
-        });
-      };
-
-      const restoredAppId = (getCookie("appId") as string) || appId || "";
-      const restoredGoogleClientId =
-        (getCookie("google.clientId") as string) || googleClientId || "";
-      const restoredDeviceToken = (getCookie("deviceToken") as string) || "";
-      const restoredDeviceEncryptionKey =
-        (getCookie("deviceEncryptionKey") as string) || "";
-
-      if (restoredDeviceToken) setDeviceToken(restoredDeviceToken);
-      if (restoredDeviceEncryptionKey) setDeviceEncryptionKey(restoredDeviceEncryptionKey);
-
-      const initialConfig = {
-        appSettings: { appId: restoredAppId },
-        loginConfigs: {
-          deviceToken: restoredDeviceToken,
-          deviceEncryptionKey: restoredDeviceEncryptionKey,
-          google: {
-            clientId: restoredGoogleClientId,
-            redirectUri: typeof window !== "undefined" ? window.location.origin : "",
-            selectAccountPrompt: true,
-          },
-        },
-      };
-
-      const sdk = new W3SSdk(initialConfig, onLoginComplete);
-      sdkRef.current = sdk;
-
-      if (!cancelled) {
-        setSdkReady(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // deviceId取得
   useEffect(() => {
     (async () => {
-      if (!sdkRef.current || !sdkReady) return;
-      const cached =
-        typeof window !== "undefined" ? window.localStorage.getItem("deviceId") : null;
-      if (cached) {
-        setDeviceId(cached);
-        return;
-      }
-      const id = await sdkRef.current.getDeviceId();
-      setDeviceId(id);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("deviceId", id);
-      }
-    })();
-  }, [sdkReady]);
-
-  // deviceId取得後、自動でデバイストークン発行→ログイン導線を用意
-  const ensureDeviceToken = async () => {
-    if (deviceToken) return deviceToken;
-    if (!deviceId) return null;
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "createDeviceToken", deviceId }),
-    });
-    const data = await res.json();
-    setDeviceToken(data.deviceToken);
-    setDeviceEncryptionKey(data.deviceEncryptionKey);
-    setCookie("deviceToken", data.deviceToken);
-    setCookie("deviceEncryptionKey", data.deviceEncryptionKey);
-    return data.deviceToken as string;
-  };
-
-  const handleLogin = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk) return;
-
-    const token = await ensureDeviceToken();
-    if (!token) return;
-
-    setCookie("appId", appId);
-    setCookie("google.clientId", googleClientId);
-
-    sdk.updateConfigs({
-      appSettings: { appId },
-      loginConfigs: {
-        deviceToken: token,
-        deviceEncryptionKey,
-        google: {
-          clientId: googleClientId,
-          redirectUri: window.location.origin,
-          selectAccountPrompt: true,
-        },
-      },
-    });
-
-    sdk.performLogin(SocialLoginProvider.GOOGLE);
-  };
-
-  // ログイン結果が入ったら自動でウォレット・残高取得
-  useEffect(() => {
-    (async () => {
-      if (!loginResult?.userToken) return;
+      if (!loginResult?.userToken || !wallet?.id) return;
       setLoading(true);
-
-      const walletsRes = await fetch("/api/circle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "listWallets", userToken: loginResult.userToken }),
-      });
-      const walletsData = await walletsRes.json();
-      const w = walletsData.wallets?.[0];
-      if (!w) {
-        setLoading(false);
-        return;
-      }
-      setWallet(w);
-
-      const balanceRes = await fetch("/api/circle", {
+      const res = await fetch("/api/circle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "getBalance",
           userToken: loginResult.userToken,
-          walletId: w.id,
+          walletId: wallet.id,
         }),
       });
-      const balanceData = await balanceRes.json();
-      setBalances(balanceData.tokenBalances || []);
+      const data = await res.json();
+      setBalances(data.tokenBalances || []);
       setLoading(false);
     })();
-  }, [loginResult]);
+  }, [loginResult, wallet]);
 
-  const usdcBalance = balances.find(
-    (b) => b.token?.symbol === "USDC"
-  );
+  const usdcBalance = balances.find((b) => b.token?.symbol === "USDC");
 
   const handleCopyAddress = () => {
     if (!wallet?.address) return;
@@ -268,14 +93,13 @@ export default function Home() {
         </div>
       </div>
 
-      {!loginResult ? (
-        // 未ログイン状態
+      {restoring ? null : !loginResult ? (
         <div style={{ textAlign: "center", marginTop: 60 }}>
           <p style={{ fontSize: 13, color: "#6B7688", marginBottom: 16 }}>
             Sign in to view your payroll wallet
           </p>
           <button
-            onClick={handleLogin}
+            onClick={login}
             disabled={!deviceId}
             style={{
               background: "#2E5CFF",
@@ -306,14 +130,7 @@ export default function Home() {
                 letterSpacing: "-0.02em",
               }}
             >
-              {loading
-                ? "..."
-                : usdcBalance
-                ? `$${Number(usdcBalance.amount).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`
-                : "$0.00"}
+              {loading ? "..." : `$${formatAmount(usdcBalance?.amount ?? "0")}`}
             </div>
           </div>
 
@@ -439,12 +256,12 @@ export default function Home() {
                     USD Coin
                   </div>
                   <div style={{ fontSize: 11, color: "#9AA3B2" }}>
-                    {usdcBalance ? `${usdcBalance.amount} USDC` : "0 USDC"}
+                    {formatAmount(usdcBalance?.amount ?? "0")} USDC
                   </div>
                 </div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
-                {usdcBalance ? `$${usdcBalance.amount}` : "$0.00"}
+                ${formatAmount(usdcBalance?.amount ?? "0")}
               </div>
             </div>
           </div>
