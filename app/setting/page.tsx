@@ -123,10 +123,13 @@ export default function SettingPage() {
     setManualAddress("");
   };
 
+  // CSVヘッダーの表記ゆれ（Address/address、Label/name等）を吸収するため、
+  // すべてのキーを小文字化してから複数の候補名でマッチさせる。
   const handleCsvFile = (file: File) => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (header) => header.trim().toLowerCase(),
       complete: (results) => {
         const rows = (results.data as any[])
           .map((r) => ({
@@ -138,6 +141,7 @@ export default function SettingPage() {
       },
     });
   };
+
 
   const handleSubmitWhitelist = async () => {
     if (!loginResult || !wallet || !schedulerAddress) {
