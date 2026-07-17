@@ -64,6 +64,7 @@ export default function SettingPage() {
       body: JSON.stringify({ action: "computeAddress", ownerAddress: wallet.address }),
     });
     const checkData = await checkRes.json();
+    alert("checkData=" + JSON.stringify(checkData));
 
     if (checkData.alreadyDeployed) {
       persistScheduler(checkData.predicted);
