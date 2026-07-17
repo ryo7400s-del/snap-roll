@@ -245,6 +245,7 @@ export default function ApprovePage() {
       }),
     });
     const allowanceData = await allowanceRes.json();
+    alert("allowanceData=" + JSON.stringify(allowanceData));
     const currentAllowance = BigInt(allowanceData.allowance || "0");
     const requiredAmount = BigInt(item.amount);
 
