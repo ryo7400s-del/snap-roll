@@ -1,25 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { setCookie, getCookie } from "cookies-next";
-import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
-import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-import { fromUsdcUnits } from "../components/usdc";
-
-const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
-const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
-
-type LoginResult = {
-  userToken: string;
-  encryptionKey: string;
-};
-
-type Wallet = {
-  id: string;
-  address: string;
-  blockchain: string;
-  [key: string]: unknown;
-};
+import { useEffect, useState } from "react";
+import { useCircleAuth } from "../components/useCircleAuth";
 
 type PendingSchedule = {
   id: string;
@@ -28,22 +10,25 @@ type PendingSchedule = {
   amount: string;
   execute_after: number;
   status: string;
+  label?: string;
+  currency?: string;
+  interval_seconds?: number | null;
 };
 
+function formatUsdc(amount: string) {
+  const n = Number(amount) / 1_000_000;
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+}
+
 export default function ApprovePage() {
-  const sdkRef = useRef<W3SSdk | null>(null);
+  const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
 
-  const [sdkReady, setSdkReady] = useState(false);
-  const [deviceId, setDeviceId] = useState("");
-  const [deviceToken, setDeviceToken] = useState("");
-  const [deviceEncryptionKey, setDeviceEncryptionKey] = useState("");
-  const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [status, setStatus] = useState("初期化前");
-  const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
   const [schedulerAddress, setSchedulerAddress] = useState("");
+  const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // URLのscheduler paramをCookieに保存し、リダイレクト後も維持する
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("scheduler");
@@ -56,192 +41,41 @@ export default function ApprovePage() {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      const pending = window.localStorage.getItem("pendingLoginResult");
-      if (pending) {
-        window.localStorage.removeItem("pendingLoginResult");
-        const parsed = JSON.parse(pending);
-        setLoginResult({ userToken: parsed.userToken, encryptionKey: parsed.encryptionKey });
-        setStatus("ログイン成功（引き継ぎ）。ユーザー初期化中...");
-        fetch("/api/circle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "initializeUser", userToken: parsed.userToken }),
-        }).then(() => setStatus("ログイン成功。ウォレット一覧を取得できます"));
-      }
-
-      const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
-
-      const onLoginComplete = (error: unknown, result: any) => {
-        if (cancelled) return;
-        if (error) {
-          setStatus("ログイン結果なし（未ログイン状態）");
-          return;
-        }
-        setLoginResult({
-          userToken: result.userToken,
-          encryptionKey: result.encryptionKey,
-        });
-        setStatus("ログイン成功。ユーザー初期化中...");
-
-        fetch("/api/circle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "initializeUser",
-            userToken: result.userToken,
-          }),
-        }).then(() => setStatus("ログイン成功。ウォレット一覧を取得できます"));
-      };
-
-      const restoredAppId = (getCookie("appId") as string) || appId || "";
-      const restoredGoogleClientId =
-        (getCookie("google.clientId") as string) || googleClientId || "";
-      const restoredDeviceToken = (getCookie("deviceToken") as string) || "";
-      const restoredDeviceEncryptionKey =
-        (getCookie("deviceEncryptionKey") as string) || "";
-
-      if (restoredDeviceToken) setDeviceToken(restoredDeviceToken);
-      if (restoredDeviceEncryptionKey) setDeviceEncryptionKey(restoredDeviceEncryptionKey);
-
-      const initialConfig = {
-        appSettings: { appId: restoredAppId },
-        loginConfigs: {
-          deviceToken: restoredDeviceToken,
-          deviceEncryptionKey: restoredDeviceEncryptionKey,
-          google: {
-            clientId: restoredGoogleClientId,
-            // オリジンのみに統一（クエリ付きURLはGoogle OAuth側で個別登録が必要になるため）
-            redirectUri: typeof window !== "undefined" ? window.location.origin : "",
-            selectAccountPrompt: true,
-          },
-        },
-      };
-
-      const sdk = new W3SSdk(initialConfig, onLoginComplete);
-      sdkRef.current = sdk;
-
-      if (!cancelled) {
-        setSdkReady(true);
-        setStatus("SDK初期化完了");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      if (!sdkRef.current || !sdkReady) return;
-      const id = await sdkRef.current.getDeviceId();
-      setDeviceId(id);
-    })();
-  }, [sdkReady]);
-
-  const handleCreateDeviceToken = async () => {
-    if (!deviceId) return setStatus("deviceId未取得");
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "createDeviceToken", deviceId }),
-    });
-    const data = await res.json();
-    setDeviceToken(data.deviceToken);
-    setDeviceEncryptionKey(data.deviceEncryptionKey);
-    setCookie("deviceToken", data.deviceToken);
-    setCookie("deviceEncryptionKey", data.deviceEncryptionKey);
-    setStatus("デバイストークン作成完了");
-  };
-
-  const handleLoginWithGoogle = () => {
-    const sdk = sdkRef.current;
-    if (!sdk || !deviceToken || !deviceEncryptionKey) {
-      setStatus("先にデバイストークンを作成してください");
-      return;
-    }
-
-    window.localStorage.setItem("postLoginRedirect", window.location.pathname + window.location.search);
-    setCookie("appId", appId);
-    setCookie("google.clientId", googleClientId);
-    setCookie("deviceToken", deviceToken);
-    setCookie("deviceEncryptionKey", deviceEncryptionKey);
-
-    sdk.updateConfigs({
-      appSettings: { appId },
-      loginConfigs: {
-        deviceToken,
-        deviceEncryptionKey,
-        google: {
-          clientId: googleClientId,
-          redirectUri: window.location.origin,
-          selectAccountPrompt: true,
-        },
-      },
-    });
-
-    setStatus("Googleへリダイレクト中...");
-    sessionStorage.setItem("loginStartedAt", Date.now().toString());
-    sdk.performLogin(SocialLoginProvider.GOOGLE);
-  };
-
-  const handleListWallets = async () => {
-    if (!loginResult?.userToken) return setStatus("先にログインしてください");
-    const res = await fetch("/api/circle", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "listWallets", userToken: loginResult.userToken }),
-    });
-    const data = await res.json();
-    if (data.wallets) {
-      setWallets(data.wallets);
-      setStatus(`ウォレット ${data.wallets.length} 件取得`);
-    } else {
-      setStatus("ウォレット取得失敗: " + JSON.stringify(data));
-    }
-  };
-
-  const handleLoadPending = async () => {
-    if (!schedulerAddress) return setStatus("schedulerAddressが指定されていません");
+  const fetchPending = async (address: string) => {
+    if (!address) return;
+    setPendingLoading(true);
     const res = await fetch("/api/schedule", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "listPending", schedulerAddress }),
+      body: JSON.stringify({ action: "listPending", schedulerAddress: address }),
     });
     const data = await res.json();
-    if (data.pending) {
-      setPendingList(data.pending);
-      setStatus(`保留中 ${data.pending.length} 件`);
-    } else {
-      setStatus("取得失敗: " + JSON.stringify(data));
-    }
+    setPendingList(data.pending || []);
+    setPendingLoading(false);
   };
 
-  // 承認処理: USDCのallowanceが不足していれば先にapproveし、
-  // 続けてcreateScheduleForを実行する。2回目以降はapprove済みなので
-  // 1回のPIN入力（createScheduleForのみ）で完了する。
+  // ログイン・ウォレット取得が完了したら、自動で保留一覧を取得する
+  useEffect(() => {
+    if (loginResult && wallet && schedulerAddress) {
+      fetchPending(schedulerAddress);
+    }
+  }, [loginResult, wallet, schedulerAddress]);
+
   const handleApprove = async (item: PendingSchedule) => {
-    const sdk = sdkRef.current;
-    if (!sdk || !loginResult || wallets.length === 0) {
-      setStatus("ログイン・ウォレット取得が先に必要です");
+    if (!sdk || !loginResult || !wallet) {
+      setStatus("Please sign in first");
       return;
     }
 
-    const walletId = wallets[0].id;
-    const myAddress = wallets[0].address;
-
-    setStatus("USDCの利用許可を確認しています...");
+    setProcessingId(item.id);
+    setStatus("Checking USDC allowance...");
 
     const allowanceRes = await fetch("/api/circle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "checkAllowance",
-        ownerAddress: myAddress,
+        ownerAddress: wallet.address,
         schedulerAddress: item.scheduler_address,
       }),
     });
@@ -250,7 +84,7 @@ export default function ApprovePage() {
     const requiredAmount = BigInt(item.amount);
 
     if (currentAllowance < requiredAmount) {
-      setStatus("USDCの利用許可（approve）を実行しています...");
+      setStatus("Approving USDC spend limit...");
 
       const approveRes = await fetch("/api/circle", {
         method: "POST",
@@ -258,14 +92,15 @@ export default function ApprovePage() {
         body: JSON.stringify({
           action: "approveUsdc",
           userToken: loginResult.userToken,
-          walletId,
+          walletId: wallet.id,
           schedulerAddress: item.scheduler_address,
         }),
       });
       const approveData = await approveRes.json();
 
       if (!approveData.challengeId) {
-        setStatus("approveチャレンジ作成失敗: " + JSON.stringify(approveData));
+        setStatus("Approve failed: " + JSON.stringify(approveData));
+        setProcessingId(null);
         return;
       }
 
@@ -274,17 +109,22 @@ export default function ApprovePage() {
         encryptionKey: loginResult.encryptionKey,
       });
 
-      await new Promise<void>((resolve) => {
-        sdk.execute(approveData.challengeId, (error: unknown, result: any) => {
+      const approveOk = await new Promise<boolean>((resolve) => {
+        sdk.execute(approveData.challengeId, (error: unknown) => {
           if (error) {
-            setStatus("approve失敗: " + JSON.stringify(error));
-            resolve();
+            setStatus("Approve failed: " + JSON.stringify(error));
+            resolve(false);
             return;
           }
-          setStatus("approve完了。続けてスケジュールを登録します...");
-          resolve();
+          setStatus("Approved. Creating schedule...");
+          resolve(true);
         });
       });
+
+      if (!approveOk) {
+        setProcessingId(null);
+        return;
+      }
     }
 
     const requestId = "0x" + item.id.replace(/-/g, "").padStart(64, "0");
@@ -295,7 +135,7 @@ export default function ApprovePage() {
       body: JSON.stringify({
         action: "approveSchedule",
         userToken: loginResult.userToken,
-        walletId,
+        walletId: wallet.id,
         schedulerAddress: item.scheduler_address,
         recipient: item.recipient,
         amount: item.amount,
@@ -306,7 +146,8 @@ export default function ApprovePage() {
     const data = await res.json();
 
     if (!data.challengeId) {
-      setStatus("チャレンジ作成失敗: " + JSON.stringify(data));
+      setStatus("Failed to create challenge: " + JSON.stringify(data));
+      setProcessingId(null);
       return;
     }
 
@@ -315,8 +156,9 @@ export default function ApprovePage() {
       encryptionKey: loginResult.encryptionKey,
     });
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
+      setProcessingId(null);
       if (error) {
-        setStatus("承認実行失敗: " + JSON.stringify(error));
+        setStatus("Approval failed: " + JSON.stringify(error));
         return;
       }
 
@@ -330,61 +172,163 @@ export default function ApprovePage() {
         }),
       });
 
-      setStatus(`承認完了: ${item.recipient} (${fromUsdcUnits(item.amount)})`);
-      handleLoadPending();
+      setStatus("Approved and scheduled successfully");
+      fetchPending(schedulerAddress);
     });
   };
 
-  return (
-    <main style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>給与スケジュール承認</h1>
-      <p>ステータス: {status}</p>
-      <p>対象コントラクト: {schedulerAddress || "（URLにscheduler未指定）"}</p>
+  const handleReject = async (item: PendingSchedule) => {
+    setProcessingId(item.id);
+    await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reject", id: item.id }),
+    });
+    setProcessingId(null);
+    setStatus("Rejected");
+    fetchPending(schedulerAddress);
+  };
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
-        <button onClick={handleCreateDeviceToken} disabled={!deviceId}>
-          ① デバイストークン作成
-        </button>
-        <button onClick={handleLoginWithGoogle} disabled={!deviceToken}>
-          ② Googleでログイン
-        </button>
-        <button onClick={handleListWallets} disabled={!loginResult}>
-          ③ ウォレット一覧取得
-        </button>
-        <button onClick={handleLoadPending} disabled={!schedulerAddress}>
-          ④ 保留中スケジュール一覧を取得
-        </button>
+  return (
+    <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>
+        Approvals
+      </div>
+      <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 22 }}>
+        Review and approve pending payroll schedules
       </div>
 
-      {pendingList.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <h3>保留中のスケジュール</h3>
-          {pendingList.map((item) => (
+      {restoring ? null : !loginResult ? (
+        <div style={{ textAlign: "center", marginTop: 60 }}>
+          <p style={{ fontSize: 13, color: "#6B7688", marginBottom: 16 }}>
+            Sign in to review approvals
+          </p>
+          <button
+            onClick={login}
+            style={{
+              background: "#2E5CFF",
+              border: "none",
+              borderRadius: 12,
+              padding: "12px 24px",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Sign in with Google
+          </button>
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              background: "linear-gradient(135deg,#2E5CFF,#5B8CFF)",
+              borderRadius: 20,
+              padding: "16px 18px",
+              marginBottom: 20,
+              color: "#fff",
+            }}
+          >
+            <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 4 }}>Contract</div>
+            <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "monospace" }}>
+              {schedulerAddress
+                ? `${schedulerAddress.slice(0, 8)}...${schedulerAddress.slice(-6)}`
+                : "not set"}
+            </div>
+          </div>
+
+          {status && (
             <div
-              key={item.id}
               style={{
-                border: "1px solid #ccc",
-                padding: 12,
-                marginBottom: 8,
-                maxWidth: 400,
+                fontSize: 12,
+                color: "#2E5CFF",
+                background: "#EAF0FF",
+                borderRadius: 12,
+                padding: "10px 12px",
+                marginBottom: 16,
               }}
             >
-              <p>受取人: {item.recipient}</p>
-              <p>金額: {fromUsdcUnits(item.amount)}</p>
-              <p>
-                実行可能時刻:{" "}
-                {new Date(item.execute_after * 1000).toLocaleString()}
-              </p>
-              <button
-                onClick={() => handleApprove(item)}
-                disabled={wallets.length === 0}
-              >
-                承認して実行
-              </button>
+              {status}
             </div>
-          ))}
-        </div>
+          )}
+
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#0B1220", marginBottom: 12 }}>
+            Pending ({pendingList.length})
+          </div>
+
+          {pendingLoading ? (
+            <div style={{ fontSize: 12, color: "#9AA3B2" }}>Loading...</div>
+          ) : pendingList.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#9AA3B2" }}>No pending schedules</div>
+          ) : (
+            pendingList.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #EEF1F6",
+                  borderRadius: 16,
+                  padding: 14,
+                  marginBottom: 10,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                    {item.label || `${item.recipient.slice(0, 6)}...${item.recipient.slice(-4)}`}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                    ${formatUsdc(item.amount)}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 12 }}>
+                  {item.currency || "USDC"} ·{" "}
+                  {new Date(item.execute_after * 1000).toLocaleDateString()}
+                  {item.interval_seconds ? " · repeats" : ""}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => handleApprove(item)}
+                    disabled={processingId === item.id}
+                    style={{
+                      flex: 1,
+                      background: "#2E5CFF",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "10px 0",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      opacity: processingId === item.id ? 0.6 : 1,
+                    }}
+                  >
+                    {processingId === item.id ? "Processing..." : "Approve"}
+                  </button>
+                  <button
+                    onClick={() => handleReject(item)}
+                    disabled={processingId === item.id}
+                    style={{
+                      flex: 1,
+                      background: "#FDEDED",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "10px 0",
+                      color: "#E5484D",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      opacity: processingId === item.id ? 0.6 : 1,
+                    }}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </>
       )}
-    </main>
+    </div>
   );
 }
