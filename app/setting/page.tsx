@@ -473,7 +473,7 @@ export default function SettingPage() {
             Get notified on Telegram when a payroll schedule needs your approval.
           </div>
           <button
-            onClick={handleRegisterApprover}
+            onClick={() => handleRegisterApprover()}
             style={{
               width: "100%",
               background: "#2E5CFF",
