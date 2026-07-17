@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Papa from "papaparse";
 import { useCircleAuth } from "../components/useCircleAuth";
 
@@ -32,6 +32,9 @@ export default function SettingPage() {
   const [csvEntries, setCsvEntries] = useState<WhitelistEntry[]>([]);
   const [whitelisted, setWhitelisted] = useState<WhitelistEntry[]>([]);
   const [whitelistStatus, setWhitelistStatus] = useState<string | null>(null);
+  const [whitelistList, setWhitelistList] = useState<string[]>([]);
+  const [whitelistListOpen, setWhitelistListOpen] = useState(false);
+  const [whitelistListLoading, setWhitelistListLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [telegramLink, setTelegramLink] = useState<string | null>(null);
@@ -143,6 +146,30 @@ export default function SettingPage() {
   };
 
 
+
+  // ホワイトリスト一覧を取得（イベントログから最新状態を集計）。
+  // 折りたたみパネルを開いたとき・登録成功後に呼ぶ。
+  const fetchWhitelist = async () => {
+    if (!schedulerAddress) return;
+    setWhitelistListLoading(true);
+    const res = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "getWhitelist", schedulerAddress }),
+    });
+    const data = await res.json();
+    setWhitelistList(data.whitelist || []);
+    setWhitelistListLoading(false);
+  };
+
+  const toggleWhitelistList = () => {
+    const next = !whitelistListOpen;
+    setWhitelistListOpen(next);
+    if (next && whitelistList.length === 0) {
+      fetchWhitelist();
+    }
+  };
+
   const handleSubmitWhitelist = async () => {
     if (!loginResult || !wallet || !schedulerAddress) {
       setWhitelistStatus("ログイン・コントラクトアドレスの設定が必要です");
@@ -192,6 +219,7 @@ export default function SettingPage() {
       setWhitelistStatus(`登録成功（${entries.length}件）`);
       setCsvEntries([]);
       setWhitelisted([]);
+      fetchWhitelist();
     });
   };
 
@@ -223,6 +251,10 @@ export default function SettingPage() {
     setTelegramLink(link);
     setTelegramStatus("下のリンクからTelegramで通知を有効化してください");
   };
+
+  useEffect(() => {
+    if (schedulerAddress) fetchWhitelist();
+  }, [schedulerAddress]);
 
   return (
     <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
@@ -467,6 +499,67 @@ export default function SettingPage() {
           </button>
           {whitelistStatus && (
             <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 20 }}>{whitelistStatus}</div>
+          )}
+
+          {/* ホワイトリスト一覧（折りたたみ） */}
+          <button
+            onClick={toggleWhitelistList}
+            style={{
+              width: "100%",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              background: "#FFFFFF",
+              border: "1px solid #EEF1F6",
+              borderRadius: 14,
+              padding: "12px 14px",
+              marginBottom: whitelistListOpen ? 0 : 20,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#0B1220",
+            }}
+          >
+            <span>View whitelisted addresses ({whitelistList.length})</span>
+            <span style={{ color: "#9AA3B2", fontSize: 11 }}>
+              {whitelistListOpen ? "▲" : "▼"}
+            </span>
+          </button>
+          {whitelistListOpen && (
+            <div
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #EEF1F6",
+                borderTop: "none",
+                borderRadius: "0 0 14px 14px",
+                padding: 12,
+                marginBottom: 20,
+                maxHeight: 220,
+                overflowY: "auto",
+              }}
+            >
+              {whitelistListLoading ? (
+                <div style={{ fontSize: 11, color: "#9AA3B2" }}>Loading...</div>
+              ) : whitelistList.length === 0 ? (
+                <div style={{ fontSize: 11, color: "#9AA3B2" }}>No addresses yet</div>
+              ) : (
+                whitelistList.map((addr, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      fontSize: 11,
+                      fontFamily: "monospace",
+                      color: "#6B7688",
+                      padding: "6px 0",
+                      borderBottom:
+                        i < whitelistList.length - 1 ? "1px solid #F1F3F8" : "none",
+                    }}
+                  >
+                    {addr}
+                  </div>
+                ))
+              )}
+            </div>
           )}
 
           {/* Telegram連携 */}

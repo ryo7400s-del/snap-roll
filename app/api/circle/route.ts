@@ -86,6 +86,36 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
 
       }
+
+      case "getWhitelist": {
+        try {
+          const { schedulerAddress } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const abi = ["event WhitelistUpdated(address indexed account, bool status)"];
+          const contract = new ethers.Contract(schedulerAddress, abi, provider);
+          const filter = contract.filters.WhitelistUpdated();
+          const events = await contract.queryFilter(filter, 0, "latest");
+
+          // 同じアドレスに複数回イベントが出ている場合、最新の状態のみ残す
+          const latestStatus = new Map<string, boolean>();
+          for (const ev of events) {
+            const args = (ev as any).args;
+            if (!args) continue;
+            latestStatus.set(args.account.toLowerCase(), args.status);
+          }
+
+          const whitelist = Array.from(latestStatus.entries())
+            .filter(([, status]) => status)
+            .map(([address]) => address);
+
+          return NextResponse.json({ whitelist }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("getWhitelist error:", message);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
       case "computeAddress": {
         try {
           const { ownerAddress } = params;
