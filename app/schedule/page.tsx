@@ -33,6 +33,18 @@ const INTERVAL_SECONDS: Record<string, number> = {
   monthly: 30 * 24 * 60 * 60,
 };
 
+// USDCは6桁精度のERC20トークンとして扱う（オンチェーンの実際の単位）。
+// 人間が入力する小数表記（例: "0.1"）を、コントラクトに渡す整数の
+// 最小単位（例: "100000"）に変換する。小数点以下7桁目以降は切り捨て。
+function toUsdcUnits(amount: string): string {
+  const trimmed = amount.trim();
+  if (!trimmed) return "0";
+  const [intPart, decPart = ""] = trimmed.split(".");
+  const paddedDec = (decPart + "000000").slice(0, 6);
+  const combined = `${intPart}${paddedDec}`.replace(/^0+(?=\d)/, "");
+  return combined || "0";
+}
+
 function parseDateField(value: string): number {
   const now = new Date();
   if (value === "today") {
@@ -161,7 +173,7 @@ export default function SchedulePage() {
 
     const payload = entries.map((e) => ({
       recipient: e.address,
-      amount: e.amount,
+      amount: toUsdcUnits(e.amount),
       executeAfter: parseDateField(e.date),
       label: e.label || null,
       currency: e.currency || "USDC",
