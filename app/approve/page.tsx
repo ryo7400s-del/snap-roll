@@ -263,6 +263,7 @@ export default function ApprovePage() {
         }),
       });
       const approveData = await approveRes.json();
+    alert("approveData=" + JSON.stringify(approveData));
 
       if (!approveData.challengeId) {
         setStatus("approveチャレンジ作成失敗: " + JSON.stringify(approveData));
