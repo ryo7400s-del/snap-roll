@@ -87,14 +87,21 @@ export async function POST(request: Request) {
 
       }
       case "computeAddress": {
-        const { ownerAddress } = params;
-        const { ethers } = await import("ethers");
-        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-        const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
-        const factory = new ethers.Contract("0x0BECA7A71062830C0De5320c3EB6892099DDF9D2", abi, provider);
-        const predicted = await factory.computeAddress(ethers.getAddress(ownerAddress));
-        const alreadyDeployed = await factory.hasDeployed(ethers.getAddress(ownerAddress));
-        return NextResponse.json({ predicted, alreadyDeployed }, { status: 200 });
+        try {
+          const { ownerAddress } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+          const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
+          const normalizedAddress = ethers.getAddress(ownerAddress.toLowerCase());
+          const factory = new ethers.Contract("0x0BECA7A71062830C0De5320c3EB6892099DDF9D2", abi, provider);
+          const predicted = await factory.computeAddress(normalizedAddress);
+          const alreadyDeployed = await factory.hasDeployed(normalizedAddress);
+          return NextResponse.json({ predicted, alreadyDeployed }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("computeAddress error:", message);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
       }
 
       case "deployFactory": {
