@@ -90,7 +90,7 @@ export async function POST(request: Request) {
         try {
           const { ownerAddress } = params;
           const { ethers } = await import("ethers");
-          const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
           const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
           const normalizedAddress = ethers.getAddress(ownerAddress.toLowerCase());
           const factory = new ethers.Contract("0x0BECA7A71062830C0De5320c3EB6892099DDF9D2", abi, provider);
