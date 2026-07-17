@@ -133,7 +133,7 @@ export async function POST(request: Request) {
           const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
           const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
           const normalizedAddress = ethers.getAddress(ownerAddress.toLowerCase());
-          const factory = new ethers.Contract("0x0BECA7A71062830C0De5320c3EB6892099DDF9D2", abi, provider);
+          const factory = new ethers.Contract("0x48c2A4571C8a7A2074AD153C08488734f3A3411E", abi, provider);
           const predicted = await factory.computeAddress(normalizedAddress);
           const alreadyDeployed = await factory.hasDeployed(normalizedAddress);
           return NextResponse.json({ predicted, alreadyDeployed }, { status: 200 });
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
               idempotencyKey: crypto.randomUUID(),
               walletId,
-              contractAddress: "0x0BECA7A71062830C0De5320c3EB6892099DDF9D2",
+              contractAddress: "0x48c2A4571C8a7A2074AD153C08488734f3A3411E",
               abiFunctionSignature: "deploy()",
               abiParameters: [],
               feeLevel: "MEDIUM",

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Papa from "papaparse";
 import { useCircleAuth } from "../components/useCircleAuth";
 
-const FACTORY_ADDRESS = "0x0BECA7A71062830C0De5320c3EB6892099DDF9D2";
+const FACTORY_ADDRESS = "0x48c2A4571C8a7A2074AD153C08488734f3A3411E";
 
 // 一度デプロイしたPaymentSchedulerV2のアドレスを保持する場所。
 // 本来はユーザーごとにSchedulerRegistry等から取得すべきだが、
