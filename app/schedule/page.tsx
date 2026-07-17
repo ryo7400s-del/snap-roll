@@ -13,6 +13,7 @@ type ScheduleEntry = {
   currency: string;
   interval: "" | "weekly" | "monthly";
   date: string; // "today" | "tomorrow" | "YYYY/MM/DD"
+  whitelisted?: boolean | null; // null = 未確認
 };
 
 type PendingSchedule = {
@@ -104,14 +105,13 @@ export default function SchedulePage() {
       date: "today",
     });
   };
-
-  const handleCsvFile = (file: File) => {
+  const handleCsvFile = async (file: File) => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header) => header.trim().toLowerCase(),
-      complete: (results) => {
-        const rows = (results.data as any[])
+      complete: async (results) => {
+        const rows: ScheduleEntry[] = (results.data as any[])
           .map((r) => ({
             label: r.label || "",
             address: r.address || r.wallet || r.recipient || "",
@@ -119,12 +119,32 @@ export default function SchedulePage() {
             currency: (r.currency || "USDC").toUpperCase(),
             interval: (r.interval || "").toLowerCase() as "" | "weekly" | "monthly",
             date: r.date || "today",
+            whitelisted: null,
           }))
           .filter((r) => r.address && r.amount);
+
         setCsvEntries(rows);
+
+        if (!schedulerAddress) return;
+        const wlRes = await fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "getWhitelist", schedulerAddress }),
+        });
+        const wlData = await wlRes.json();
+        const whitelistSet = new Set(
+          (wlData.whitelist || []).map((a: string) => a.toLowerCase())
+        );
+
+        const withStatus = rows.map((r) => ({
+          ...r,
+          whitelisted: whitelistSet.has(r.address.toLowerCase()),
+        }));
+        setCsvEntries(withStatus);
       },
     });
   };
+
 
   const handleSubmit = async () => {
     if (!schedulerAddress) {
@@ -286,14 +306,48 @@ export default function SchedulePage() {
                 <option value="weekly">Repeat weekly</option>
                 <option value="monthly">Repeat monthly</option>
               </select>
-              <select
-                value={manualEntry.date}
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setManualEntry({ ...manualEntry, date: "today" })}
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    borderRadius: 8,
+                    border: manualEntry.date === "today" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                    background: manualEntry.date === "today" ? "#EAF0FF" : "#F7F9FC",
+                    color: manualEntry.date === "today" ? "#2E5CFF" : "#6B7688",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManualEntry({ ...manualEntry, date: "tomorrow" })}
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    borderRadius: 8,
+                    border: manualEntry.date === "tomorrow" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                    background: manualEntry.date === "tomorrow" ? "#EAF0FF" : "#F7F9FC",
+                    color: manualEntry.date === "tomorrow" ? "#2E5CFF" : "#6B7688",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Tomorrow
+                </button>
+              </div>
+              <input
+                type="date"
+                value={manualEntry.date === "today" || manualEntry.date === "tomorrow" ? "" : manualEntry.date}
                 onChange={(e) => setManualEntry({ ...manualEntry, date: e.target.value })}
-                style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10, background: "#F7F9FC" }}
-              >
-                <option value="today">Today</option>
-                <option value="tomorrow">Tomorrow</option>
-              </select>
+                style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10, background: "#F7F9FC", boxSizing: "border-box" }}
+              />
               <button
                 onClick={handleAddManual}
                 style={{ width: "100%", background: "#2E5CFF", border: "none", borderRadius: 12, padding: "12px 0", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
@@ -334,7 +388,48 @@ export default function SchedulePage() {
                 CSV columns: label, address, amount, currency, interval (weekly/monthly), date (today/tomorrow/YYYY-MM-DD)
               </div>
               {csvEntries.length > 0 && (
-                <div style={{ fontSize: 11, color: "#6B7688" }}>{csvEntries.length} entries loaded</div>
+                <div style={{ overflowX: "auto", marginTop: 4 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "#9AA3B2" }}>
+                        <th style={{ padding: "4px 6px" }}>Label</th>
+                        <th style={{ padding: "4px 6px" }}>Address</th>
+                        <th style={{ padding: "4px 6px" }}>Whitelist</th>
+                        <th style={{ padding: "4px 6px" }}>Amount</th>
+                        <th style={{ padding: "4px 6px" }}>Currency</th>
+                        <th style={{ padding: "4px 6px" }}>Interval</th>
+                        <th style={{ padding: "4px 6px" }}>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvEntries.map((e, i) => (
+                        <tr key={i} style={{ borderTop: "1px solid #F1F3F8" }}>
+                          <td style={{ padding: "4px 6px" }}>{e.label || "—"}</td>
+                          <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>
+                            {e.address.slice(0, 6)}...{e.address.slice(-4)}
+                          </td>
+                          <td style={{ padding: "4px 6px" }}>
+                            {e.whitelisted === null ? (
+                              <span style={{ color: "#9AA3B2" }}>?</span>
+                            ) : e.whitelisted ? (
+                              <span style={{ color: "#16A34A" }}>✓</span>
+                            ) : (
+                              <span style={{ color: "#E5484D" }}>✕</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "4px 6px" }}>{e.amount}</td>
+                          <td style={{ padding: "4px 6px" }}>{e.currency}</td>
+                          <td style={{ padding: "4px 6px" }}>{e.interval || "one-time"}</td>
+                          <td style={{ padding: "4px 6px" }}>{e.date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 10, color: "#9AA3B2", marginTop: 6 }}>
+                    {csvEntries.length} entries loaded ·{" "}
+                    {csvEntries.filter((e) => e.whitelisted === false).length} not whitelisted
+                  </div>
+                </div>
               )}
             </div>
           )}
