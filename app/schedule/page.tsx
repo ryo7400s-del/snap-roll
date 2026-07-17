@@ -342,6 +342,9 @@ export default function SchedulePage() {
                   Tomorrow
                 </button>
               </div>
+              <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 6, marginTop: 4 }}>
+                Or pick a specific start date:
+              </div>
               <input
                 type="date"
                 value={manualEntry.date === "today" || manualEntry.date === "tomorrow" ? "" : manualEntry.date}
