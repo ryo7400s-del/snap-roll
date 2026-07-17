@@ -95,11 +95,20 @@ export async function POST(request: Request) {
           const abi = ["event WhitelistUpdated(address indexed account, bool status)"];
           const contract = new ethers.Contract(schedulerAddress, abi, provider);
           const filter = contract.filters.WhitelistUpdated();
-          const events = await contract.queryFilter(filter, 0, "latest");
 
-          // 同じアドレスに複数回イベントが出ている場合、最新の状態のみ残す
+          const latestBlock = await provider.getBlockNumber();
+          const CHUNK_SIZE = 9000;
+          const deployBlock = 52000000;
+          let allEvents: any[] = [];
+
+          for (let from = deployBlock; from <= latestBlock; from += CHUNK_SIZE) {
+            const to = Math.min(from + CHUNK_SIZE - 1, latestBlock);
+            const chunkEvents = await contract.queryFilter(filter, from, to);
+            allEvents = allEvents.concat(chunkEvents);
+          }
+
           const latestStatus = new Map<string, boolean>();
-          for (const ev of events) {
+          for (const ev of allEvents) {
             const args = (ev as any).args;
             if (!args) continue;
             latestStatus.set(args.account.toLowerCase(), args.status);
@@ -116,6 +125,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: message }, { status: 500 });
         }
       }
+
       case "computeAddress": {
         try {
           const { ownerAddress } = params;
