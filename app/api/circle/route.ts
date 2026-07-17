@@ -85,6 +85,7 @@ export async function POST(request: Request) {
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
 
+      }
       case "computeAddress": {
         const { ownerAddress } = params;
         const { ethers } = await import("ethers");
