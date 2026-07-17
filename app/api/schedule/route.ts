@@ -50,13 +50,15 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-
         const rows = entries.map((e: any) => ({
           scheduler_address: schedulerAddress,
           recipient: e.recipient,
           amount: e.amount,
           execute_after: e.executeAfter,
           status: "pending",
+          interval_seconds: e.intervalSeconds ?? null,
+          currency: e.currency ?? "USDC",
+          label: e.label ?? null,
         }));
 
         const { data, error } = await supabase
@@ -79,9 +81,9 @@ export async function POST(request: Request) {
           const csvLines = data
             .map(
               (row: any) =>
-                `${row.recipient},${row.amount},${new Date(
+                `${row.label ?? row.recipient},${row.amount} ${row.currency ?? "USDC"},${new Date(
                   row.execute_after * 1000
-                ).toISOString()}`
+                ).toISOString()}${row.interval_seconds ? ` (repeats every ${row.interval_seconds}s)` : ""}`
             )
             .join("\n");
 
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
 
           const message =
             `📋 New payroll schedule approval request\n\n` +
-            `recipient,amount,executeAfter\n${csvLines}`;
+            `label,amount,executeAfter\n${csvLines}`;
 
           // 申請ごとに1件ずつボタンを出す（拒否は個別に処理するため）
           for (const approver of approvers) {
