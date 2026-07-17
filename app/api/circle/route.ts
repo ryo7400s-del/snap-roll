@@ -126,6 +126,51 @@ export async function POST(request: Request) {
         }
       }
 
+      case "checkAllowance": {
+        try {
+          const { ownerAddress, schedulerAddress } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const usdcAbi = ["function allowance(address owner, address spender) view returns (uint256)"];
+          const usdc = new ethers.Contract("0x3600000000000000000000000000000000000000", usdcAbi, provider);
+          const allowance = await usdc.allowance(
+            ethers.getAddress(ownerAddress.toLowerCase()),
+            ethers.getAddress(schedulerAddress.toLowerCase())
+          );
+          return NextResponse.json({ allowance: allowance.toString() }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+      case "approveUsdc": {
+        const { userToken, walletId, schedulerAddress } = params;
+        const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: "0x3600000000000000000000000000000000000000",
+              abiFunctionSignature: "approve(address,uint256)",
+              abiParameters: [schedulerAddress, MAX_UINT256],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "computeAddress": {
         try {
           const { ownerAddress } = params;

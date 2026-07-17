@@ -220,6 +220,9 @@ export default function ApprovePage() {
     }
   };
 
+  // 承認処理: USDCのallowanceが不足していれば先にapproveし、
+  // 続けてcreateScheduleForを実行する。2回目以降はapprove済みなので
+  // 1回のPIN入力（createScheduleForのみ）で完了する。
   const handleApprove = async (item: PendingSchedule) => {
     const sdk = sdkRef.current;
     if (!sdk || !loginResult || wallets.length === 0) {
@@ -228,6 +231,61 @@ export default function ApprovePage() {
     }
 
     const walletId = wallets[0].id;
+    const myAddress = wallets[0].address;
+
+    setStatus("USDCの利用許可を確認しています...");
+
+    const allowanceRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "checkAllowance",
+        ownerAddress: myAddress,
+        schedulerAddress: item.scheduler_address,
+      }),
+    });
+    const allowanceData = await allowanceRes.json();
+    const currentAllowance = BigInt(allowanceData.allowance || "0");
+    const requiredAmount = BigInt(item.amount);
+
+    if (currentAllowance < requiredAmount) {
+      setStatus("USDCの利用許可（approve）を実行しています...");
+
+      const approveRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approveUsdc",
+          userToken: loginResult.userToken,
+          walletId,
+          schedulerAddress: item.scheduler_address,
+        }),
+      });
+      const approveData = await approveRes.json();
+
+      if (!approveData.challengeId) {
+        setStatus("approveチャレンジ作成失敗: " + JSON.stringify(approveData));
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+
+      await new Promise<void>((resolve) => {
+        sdk.execute(approveData.challengeId, (error: unknown, result: any) => {
+          if (error) {
+            setStatus("approve失敗: " + JSON.stringify(error));
+            resolve();
+            return;
+          }
+          setStatus("approve完了。続けてスケジュールを登録します...");
+          resolve();
+        });
+      });
+    }
+
     const requestId = "0x" + item.id.replace(/-/g, "").padStart(64, "0");
 
     const res = await fetch("/api/circle", {
@@ -255,7 +313,7 @@ export default function ApprovePage() {
       userToken: loginResult.userToken,
       encryptionKey: loginResult.encryptionKey,
     });
-    sdk.execute(data.challengeId, async (error, result) => {
+    sdk.execute(data.challengeId, async (error: unknown, result: any) => {
       if (error) {
         setStatus("承認実行失敗: " + JSON.stringify(error));
         return;
