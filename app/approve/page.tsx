@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { setCookie, getCookie } from "cookies-next";
 import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import { fromUsdcUnits } from "../components/usdc";
 
 const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
@@ -329,7 +330,7 @@ export default function ApprovePage() {
         }),
       });
 
-      setStatus(`承認完了: ${item.recipient} (${item.amount})`);
+      setStatus(`承認完了: ${item.recipient} (${fromUsdcUnits(item.amount)})`);
       handleLoadPending();
     });
   };
@@ -369,7 +370,7 @@ export default function ApprovePage() {
               }}
             >
               <p>受取人: {item.recipient}</p>
-              <p>金額: {item.amount}</p>
+              <p>金額: {fromUsdcUnits(item.amount)}</p>
               <p>
                 実行可能時刻:{" "}
                 {new Date(item.execute_after * 1000).toLocaleString()}

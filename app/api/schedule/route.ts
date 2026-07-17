@@ -9,6 +9,16 @@ const supabase = createClient(
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
 const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_BASE_URL as string;
 
+// USDC(6桁精度)の最小単位を人間が読める小数表記に変換する。
+// 例: "100000" -> "0.1"
+function fromUsdcUnits(units: string | number): string {
+  const str = units.toString();
+  const padded = str.padStart(7, "0");
+  const intPart = padded.slice(0, -6).replace(/^0+(?=\d)/, "") || "0";
+  const decPart = padded.slice(-6).replace(/0+$/, "");
+  return decPart ? `${intPart}.${decPart}` : intPart;
+}
+
 async function sendTelegramMessage(
   chatId: string,
   text: string,
@@ -81,7 +91,7 @@ export async function POST(request: Request) {
           const csvLines = data
             .map(
               (row: any) =>
-                `${row.label ?? row.recipient},${row.amount} ${row.currency ?? "USDC"},${new Date(
+                `${row.label ?? row.recipient},${fromUsdcUnits(row.amount)} ${row.currency ?? "USDC"},${new Date(
                   row.execute_after * 1000
                 ).toISOString()}${row.interval_seconds ? ` (repeats every ${row.interval_seconds}s)` : ""}`
             )
@@ -102,7 +112,7 @@ export async function POST(request: Request) {
             for (const row of data) {
               const rowText =
                 `Recipient: ${row.recipient}\n` +
-                `Amount: ${row.amount}\n` +
+                `Amount: ${fromUsdcUnits(row.amount)}\n` +
                 `Execute after: ${new Date(row.execute_after * 1000).toISOString()}`;
 
               await sendTelegramMessage(approver.telegram_chat_id, rowText, [
@@ -159,6 +169,28 @@ export async function POST(request: Request) {
 
         if (error) {
           return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        if (data) {
+          const { data: approvers } = await supabase
+            .from("approvers")
+            .select("telegram_chat_id")
+            .eq("scheduler_address", data.scheduler_address)
+            .not("telegram_chat_id", "is", null);
+
+          if (approvers && approvers.length > 0) {
+            const message =
+              `✅ Schedule approved and executed\n\n` +
+              `${data.label ?? data.recipient}\n` +
+              `${fromUsdcUnits(data.amount)} ${data.currency ?? "USDC"}\n` +
+              (txHash ? `Tx: ${txHash}` : "");
+
+            for (const approver of approvers) {
+              if (approver.telegram_chat_id) {
+                await sendTelegramMessage(approver.telegram_chat_id, message);
+              }
+            }
+          }
         }
 
         return NextResponse.json(data, { status: 200 });
