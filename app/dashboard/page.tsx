@@ -79,7 +79,6 @@ export default function DashboardPage() {
   for (let d = 1; d <= daysInMonth; d++) calendarCells.push(d);
 
   const monthLabel = firstDayOfMonth.toLocaleDateString(undefined, {
-  console.log("schedulerAddress:", schedulerAddress, "schedules count:", schedules.length);
     year: "numeric",
     month: "long",
   });
