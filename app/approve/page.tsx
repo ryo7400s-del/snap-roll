@@ -21,7 +21,7 @@ function formatUsdc(amount: string) {
 }
 
 export default function ApprovePage() {
-  const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
+  const { sdk, loginResult, wallet, restoring, login, logout } = useCircleAuth();
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
@@ -158,6 +158,12 @@ export default function ApprovePage() {
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
       setProcessingId(null);
       if (error) {
+        const errAny = error as any;
+        if (errAny?.code === 155103 || errAny?.code === 155105) {
+          setStatus("Your session has expired. Please sign in again.");
+          logout();
+          return;
+        }
         setStatus("Approval failed: " + JSON.stringify(error));
         return;
       }

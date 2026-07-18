@@ -239,7 +239,7 @@ export function useCircleAuth() {
       const data = await res.json();
 
       // userToken切れ(155105)等の場合はログイン状態をクリアして再ログインを促す
-      if (data.code === 155105 || res.status === 401 || res.status === 403) {
+      if (data.code === 155105 || data.code === 155103 || res.status === 401 || res.status === 403) {
         logout();
         return;
       }
