@@ -196,6 +196,73 @@ export async function POST(request: Request) {
         return NextResponse.json(data, { status: 200 });
       }
 
+      // ダッシュボードのカレンダー表示用: 全ステータス（pending/approved/executed/rejected）の
+      // スケジュールを日付ごとに使えるよう取得する。
+      case "listAll": {
+        const { schedulerAddress } = params;
+        if (!schedulerAddress) {
+          return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("pending_schedules")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .order("execute_after", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ schedules: data }, { status: 200 });
+      }
+
+      // 履歴CSVダウンロード用。executedステータスのもののみ対象とし、
+      // オンチェーンのtx_hashも含めて出力する。
+      case "exportCsv": {
+        const { schedulerAddress } = params;
+        if (!schedulerAddress) {
+          return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("pending_schedules")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .order("execute_after", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        const header = "label,recipient,amount,currency,execute_after,status,tx_hash\n";
+        const rows = (data || [])
+          .map((row: any) => {
+            const amountReadable = (Number(row.amount) / 1_000_000).toString();
+            const dateStr = new Date(row.execute_after * 1000).toISOString();
+            return [
+              row.label || "",
+              row.recipient,
+              amountReadable,
+              row.currency || "USDC",
+              dateStr,
+              row.status,
+              row.tx_hash || "",
+            ].join(",");
+          })
+          .join("\n");
+
+        const csv = header + rows;
+
+        return new NextResponse(csv, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=payroll-history.csv",
+          },
+        });
+      }
+
       // 拒否処理：署名不要のためTelegramのボタンから直接呼べる
       case "reject": {
         const { id } = params;
