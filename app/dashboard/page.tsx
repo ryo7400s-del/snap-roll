@@ -288,7 +288,7 @@ export default function DashboardPage() {
                     </span>
                     <span style={{ color: "#6B7688" }}>
                       ${formatUsdc(s.amount)} ·{" "}
-                      {s.execute_after <= now ? "due now" : new Date(s.execute_after * 1000).toLocaleDateString()}
+                      {s.execute_after <= now ? "Next run: within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
                     </span>
                   </div>
                 ))
