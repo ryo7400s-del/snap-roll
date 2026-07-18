@@ -229,18 +229,47 @@ export async function POST(request: Request) {
           .from("pending_schedules")
           .select("*")
           .eq("scheduler_address", schedulerAddress)
+          .eq("status", "executed")
           .order("execute_after", { ascending: true });
 
         if (error) {
           return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        const header = "label,recipient,amount,currency,execute_after,status,tx_hash\n";
-        const rows = (data || [])
-          .map((row: any) => {
-            const amountReadable = (Number(row.amount) / 1_000_000).toString();
-            const dateStr = new Date(row.execute_after * 1000).toISOString();
-            return [
+        const { ethers } = await import("ethers");
+        const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+        const EXECUTED_TOPIC = ethers.id("ScheduleExecuted(uint256,address,uint256)");
+
+        const rows: string[] = [];
+        for (const row of data || []) {
+          const amountReadable = (Number(row.amount) / 1_000_000).toString();
+          const dateStr = new Date(row.execute_after * 1000).toISOString();
+          let verified = "no_tx_hash";
+
+          if (row.tx_hash) {
+            try {
+              const receipt = await provider.getTransactionReceipt(row.tx_hash);
+              if (!receipt) {
+                verified = "not_found";
+              } else if (receipt.status !== 1) {
+                verified = "failed";
+              } else if (
+                receipt.to?.toLowerCase() !== row.scheduler_address.toLowerCase()
+              ) {
+                verified = "wrong_contract";
+              } else {
+                const hasEvent = receipt.logs.some(
+                  (log: any) => log.topics[0] === EXECUTED_TOPIC
+                );
+                verified = hasEvent ? "verified" : "no_event";
+              }
+            } catch (e) {
+              verified = "verify_error";
+            }
+          }
+
+          rows.push(
+            [
               row.label || "",
               row.recipient,
               amountReadable,
@@ -248,11 +277,13 @@ export async function POST(request: Request) {
               dateStr,
               row.status,
               row.tx_hash || "",
-            ].join(",");
-          })
-          .join("\n");
+              verified,
+            ].join(",")
+          );
+        }
 
-        const csv = header + rows;
+        const header = "label,recipient,amount,currency,execute_after,status,tx_hash,onchain_verified\n";
+        const csv = header + rows.join("\n");
 
         return new NextResponse(csv, {
           status: 200,

@@ -85,6 +85,12 @@ export default function DashboardPage() {
 
   const selectedSchedules = selectedDate ? schedulesByDate.get(selectedDate) || [] : [];
 
+  // approved（承認済み）だがまだexecuted/rejectedになっていないもの＝
+  // 実行待ちのスケジュール。GitHub Actionsの次回実行を待っている状態。
+  const now = Math.floor(Date.now() / 1000);
+  const awaitingExecution = schedules.filter((s) => s.status === "approved");
+  const [awaitingOpen, setAwaitingOpen] = useState(false);
+
   const handleExportCsv = async () => {
     if (!schedulerAddress) return;
     const res = await fetch("/api/schedule", {
@@ -229,6 +235,66 @@ export default function DashboardPage() {
             })}
           </div>
 
+
+          {/* 承認済み・未実行（GitHub Actionsの次回実行待ち） */}
+          <button
+            onClick={() => setAwaitingOpen(!awaitingOpen)}
+            style={{
+              width: "100%",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              background: "#FFFFFF",
+              border: "1px solid #EEF1F6",
+              borderRadius: 14,
+              padding: "12px 14px",
+              marginBottom: awaitingOpen ? 0 : 16,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#0B1220",
+            }}
+          >
+            <span>Approved, awaiting execution ({awaitingExecution.length})</span>
+            <span style={{ color: "#9AA3B2", fontSize: 11 }}>{awaitingOpen ? "▲" : "▼"}</span>
+          </button>
+          {awaitingOpen && (
+            <div
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #EEF1F6",
+                borderTop: "none",
+                borderRadius: "0 0 14px 14px",
+                padding: 12,
+                marginBottom: 16,
+              }}
+            >
+              {awaitingExecution.length === 0 ? (
+                <div style={{ fontSize: 11, color: "#9AA3B2" }}>Nothing pending execution</div>
+              ) : (
+                awaitingExecution.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "8px 0",
+                      borderBottom: "1px solid #F1F3F8",
+                      fontSize: 11,
+                    }}
+                  >
+                    <span>
+                      {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
+                    </span>
+                    <span style={{ color: "#6B7688" }}>
+                      ${formatUsdc(s.amount)} ·{" "}
+                      {s.execute_after <= now ? "due now" : new Date(s.execute_after * 1000).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
           {selectedDate && selectedSchedules.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginBottom: 8 }}>
