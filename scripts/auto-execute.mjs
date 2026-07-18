@@ -56,10 +56,21 @@ async function main() {
 
   console.log(`Found ${dueSchedules.length} schedule(s) due for execution`);
 
+
+  // 既知の旧Factory由来のコントラクト（executeScheduleを持たない旧バージョン）は
+  // 処理せずスキップする。新しいFactoryを再デプロイした際はここに追記する。
+  const KNOWN_INVALID_CONTRACTS = new Set([
+    "0x2478db80727ef7ad46337bd53c17c7b6fca16a4b",
+  ]);
   for (const row of dueSchedules) {
     const requestId = "0x" + row.id.replace(/-/g, "").padStart(64, "0");
 
     console.log(`\nProcessing schedule ${row.id} (contract: ${row.scheduler_address})`);
+
+    if (KNOWN_INVALID_CONTRACTS.has(row.scheduler_address.toLowerCase())) {
+      console.log(`  Skipping: contract ${row.scheduler_address} is a known outdated contract (no executeSchedule)`);
+      continue;
+    }
 
     try {
       const scheduleId = await findScheduleIdByRequestId(row.scheduler_address, requestId);
