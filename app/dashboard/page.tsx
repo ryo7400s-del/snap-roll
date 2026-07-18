@@ -110,9 +110,6 @@ export default function DashboardPage() {
       </div>
       <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 22 }}>
         Upcoming and past payroll schedules
-      <div style={{ fontSize: 10, color: "red", marginBottom: 10 }}>
-        DEBUG: address={schedulerAddress || "none"} count={schedules.length}
-      </div>
       </div>
 
       {restoring ? null : !loginResult ? (
