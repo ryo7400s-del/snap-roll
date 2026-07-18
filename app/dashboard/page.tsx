@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("pendingSchedulerAddress");
+    const saved = window.localStorage.getItem("myPayrollScheduler");
     if (saved) setSchedulerAddress(saved);
   }, []);
 
