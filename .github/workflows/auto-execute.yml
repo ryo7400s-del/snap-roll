@@ -1,0 +1,22 @@
+name: Auto Execute Payroll
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install @supabase/supabase-js ethers
+      - name: Run auto-execute
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          EXECUTOR_PRIVATE_KEY: ${{ secrets.EXECUTOR_PRIVATE_KEY }}
+        run: node scripts/auto-execute.mjs
