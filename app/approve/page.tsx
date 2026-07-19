@@ -28,6 +28,17 @@ export default function ApprovePage() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchProcessing, setBatchProcessing] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -183,6 +194,141 @@ export default function ApprovePage() {
     });
   };
 
+  // 選択した複数件を1回のUSDC approve + 1回のcreateSchedulesForBatchでまとめて承認する。
+  // バッチ登録のメリットを活かし、件数分のPIN入力を1回に短縮する。
+  const handleBatchApprove = async () => {
+    if (!sdk || !loginResult || !wallet) {
+      setStatus("Please sign in first");
+      return;
+    }
+    const items = pendingList.filter((p) => selectedIds.has(p.id));
+    if (items.length === 0) {
+      setStatus("No schedules selected");
+      return;
+    }
+
+    setBatchProcessing(true);
+    setStatus(`Checking USDC allowance for ${items.length} schedule(s)...`);
+
+    const totalAmount = items.reduce((sum, i) => sum + BigInt(i.amount), 0n);
+
+    const allowanceRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "checkAllowance",
+        ownerAddress: wallet.address,
+        schedulerAddress: items[0].scheduler_address,
+      }),
+    });
+    const allowanceData = await allowanceRes.json();
+    const currentAllowance = BigInt(allowanceData.allowance || "0");
+
+    if (currentAllowance < totalAmount) {
+      setStatus("Approving USDC spend limit...");
+
+      const approveRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approveUsdc",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          schedulerAddress: items[0].scheduler_address,
+        }),
+      });
+      const approveData = await approveRes.json();
+
+      if (!approveData.challengeId) {
+        setStatus("Approve failed: " + JSON.stringify(approveData));
+        setBatchProcessing(false);
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+
+      const approveOk = await new Promise<boolean>((resolve) => {
+        sdk.execute(approveData.challengeId, (error: unknown) => {
+          if (error) {
+            setStatus("Approve failed: " + JSON.stringify(error));
+            resolve(false);
+            return;
+          }
+          setStatus("Approved. Submitting batch...");
+          resolve(true);
+        });
+      });
+
+      if (!approveOk) {
+        setBatchProcessing(false);
+        return;
+      }
+    }
+
+    const recipients = items.map((i) => i.recipient);
+    const amounts = items.map((i) => i.amount);
+    const executeAfters = items.map((i) => i.execute_after);
+    const requestIds = items.map((i) => "0x" + i.id.replace(/-/g, "").padStart(64, "0"));
+
+    const res = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "approveSchedulesBatch",
+        userToken: loginResult.userToken,
+        walletId: wallet.id,
+        schedulerAddress: items[0].scheduler_address,
+        recipients,
+        amounts,
+        executeAfters,
+        requestIds,
+      }),
+    });
+    const data = await res.json();
+
+    if (!data.challengeId) {
+      setStatus("Failed to create batch challenge: " + JSON.stringify(data));
+      setBatchProcessing(false);
+      return;
+    }
+
+    sdk.setAuthentication({
+      userToken: loginResult.userToken,
+      encryptionKey: loginResult.encryptionKey,
+    });
+    sdk.execute(data.challengeId, async (error: unknown, result: any) => {
+      setBatchProcessing(false);
+      if (error) {
+        const errAny = error as any;
+        if (errAny?.code === 155103 || errAny?.code === 155105) {
+          setStatus("Your session has expired. Please sign in again.");
+          logout();
+          return;
+        }
+        setStatus("Batch approval failed: " + JSON.stringify(error));
+        return;
+      }
+
+      for (const item of items) {
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "markApproved",
+            id: item.id,
+            txHash: (result as any)?.txHash || null,
+          }),
+        });
+      }
+
+      setStatus(`Batch approved: ${items.length} schedule(s)`);
+      setSelectedIds(new Set());
+      fetchPending(schedulerAddress);
+    });
+  };
   const handleReject = async (item: PendingSchedule) => {
     setProcessingId(item.id);
     await fetch("/api/schedule", {
@@ -259,6 +405,29 @@ export default function ApprovePage() {
             </div>
           )}
 
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBatchApprove}
+              disabled={batchProcessing}
+              style={{
+                width: "100%",
+                background: "#2E5CFF",
+                border: "none",
+                borderRadius: 12,
+                padding: "12px 0",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                marginBottom: 12,
+                opacity: batchProcessing ? 0.6 : 1,
+              }}
+            >
+              {batchProcessing
+                ? "Processing..."
+                : `Approve Selected (${selectedIds.size})`}
+            </button>
+          )}
           <div style={{ fontSize: 15, fontWeight: 800, color: "#0B1220", marginBottom: 12 }}>
             Pending ({pendingList.length})
           </div>
@@ -279,9 +448,17 @@ export default function ApprovePage() {
                   marginBottom: 10,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      style={{ marginTop: 3 }}
+                    />
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
                     {item.label || `${item.recipient.slice(0, 6)}...${item.recipient.slice(-4)}`}
+                  </div>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
                     ${formatUsdc(item.amount)}
