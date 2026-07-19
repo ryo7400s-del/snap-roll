@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL as string,
+  process.env.SUPABASE_SECRET_KEY as string
+);
 
 const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
@@ -84,8 +90,9 @@ export async function POST(request: Request) {
         const data = await res.json();
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
-
       }
+
+
 
       case "getWhitelist": {
         try {
@@ -96,28 +103,52 @@ export async function POST(request: Request) {
           const contract = new ethers.Contract(schedulerAddress, abi, provider);
           const filter = contract.filters.WhitelistUpdated();
 
+          const cacheKey = schedulerAddress.toLowerCase();
+          const { data: cached } = await supabase
+            .from("whitelist_cache")
+            .select("*")
+            .eq("scheduler_address", cacheKey)
+            .maybeSingle();
+
           const latestBlock = await provider.getBlockNumber();
           const CHUNK_SIZE = 9000;
-          const deployBlock = 52000000;
-          let allEvents: any[] = [];
+          const startBlock = cached ? Number(cached.last_scanned_block) + 1 : 52000000;
 
-          for (let from = deployBlock; from <= latestBlock; from += CHUNK_SIZE) {
-            const to = Math.min(from + CHUNK_SIZE - 1, latestBlock);
-            const chunkEvents = await contract.queryFilter(filter, from, to);
-            allEvents = allEvents.concat(chunkEvents);
-          }
+          const latestStatus = new Map<string, boolean>(
+            (cached?.addresses || []).map((a: string) => [a.toLowerCase(), true])
+          );
 
-          const latestStatus = new Map<string, boolean>();
-          for (const ev of allEvents) {
-            const args = (ev as any).args;
-            if (!args) continue;
-            latestStatus.set(args.account.toLowerCase(), args.status);
+          if (startBlock <= latestBlock) {
+            let allEvents: any[] = [];
+            for (let from = startBlock; from <= latestBlock; from += CHUNK_SIZE) {
+              const to = Math.min(from + CHUNK_SIZE - 1, latestBlock);
+              const chunkEvents = await contract.queryFilter(filter, from, to);
+              allEvents = allEvents.concat(chunkEvents);
+            }
+
+            for (const ev of allEvents) {
+              const args = (ev as any).args;
+              if (!args) continue;
+              latestStatus.set(args.account.toLowerCase(), args.status);
+            }
+
+            const whitelist = Array.from(latestStatus.entries())
+              .filter(([, status]) => status)
+              .map(([address]) => address);
+
+            await supabase.from("whitelist_cache").upsert({
+              scheduler_address: cacheKey,
+              addresses: whitelist,
+              last_scanned_block: latestBlock,
+              updated_at: new Date().toISOString(),
+            });
+
+            return NextResponse.json({ whitelist }, { status: 200 });
           }
 
           const whitelist = Array.from(latestStatus.entries())
             .filter(([, status]) => status)
             .map(([address]) => address);
-
           return NextResponse.json({ whitelist }, { status: 200 });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
