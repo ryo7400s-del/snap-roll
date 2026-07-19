@@ -210,7 +210,7 @@ export default function ApprovePage() {
     setBatchProcessing(true);
     setStatus(`Checking USDC allowance for ${items.length} schedule(s)...`);
 
-    const totalAmount = items.reduce((sum, i) => sum + BigInt(i.amount), 0n);
+    const totalAmount = items.reduce((sum, i) => sum + BigInt(i.amount), BigInt(0));
 
     const allowanceRes = await fetch("/api/circle", {
       method: "POST",
