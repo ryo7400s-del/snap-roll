@@ -405,6 +405,30 @@ export default function ApprovePage() {
             </div>
           )}
 
+
+          {pendingList.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button
+                onClick={() =>
+                  setSelectedIds(
+                    selectedIds.size === pendingList.length
+                      ? new Set()
+                      : new Set(pendingList.map((p) => p.id))
+                  )
+                }
+                style={{
+                  border: "none",
+                  background: "none",
+                  color: "#2E5CFF",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {selectedIds.size === pendingList.length ? "Clear all" : "Select all"}
+              </button>
+            </div>
+          )}
           {selectedIds.size > 0 && (
             <button
               onClick={handleBatchApprove}
