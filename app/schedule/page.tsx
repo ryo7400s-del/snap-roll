@@ -423,7 +423,7 @@ export default function SchedulePage() {
                           </td>
                           <td style={{ padding: "4px 6px" }}>{e.amount}</td>
                           <td style={{ padding: "4px 6px" }}>{e.currency}</td>
-                          <td style={{ padding: "4px 6px" }}>{e.interval || "one-time"}</td>
+                          <td style={{ padding: "4px 6px" }}>{e.interval ? `🔁 ${e.interval}` : "one-time"}</td>
                           <td style={{ padding: "4px 6px" }}>{e.date}</td>
                         </tr>
                       ))}
@@ -431,7 +431,8 @@ export default function SchedulePage() {
                   </table>
                   <div style={{ fontSize: 10, color: "#9AA3B2", marginTop: 6 }}>
                     {csvEntries.length} entries loaded ·{" "}
-                    {csvEntries.filter((e) => e.whitelisted === false).length} not whitelisted
+                    {csvEntries.filter((e) => e.whitelisted === false).length} not whitelisted ·{" "}
+                    {csvEntries.filter((e) => e.interval).length} recurring (🔁 repeats automatically)
                   </div>
                 </div>
               )}
