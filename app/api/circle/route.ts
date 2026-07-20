@@ -8,6 +8,7 @@ const supabase = createClient(
 
 const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
+const FACTORY_ADDRESS = "0x48c2A4571C8a7A2074AD153C08488734f3A3411E";
 
 export async function POST(request: Request) {
   try {
@@ -202,6 +203,43 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      case "checkContractVersion": {
+        try {
+          const { schedulerAddress, ownerAddress } = params;
+          const { data: configRow } = await supabase
+            .from("app_config")
+            .select("value")
+            .eq("key", "current_factory_address")
+            .maybeSingle();
+
+          const currentFactory = configRow?.value || FACTORY_ADDRESS;
+
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const abi = ["function computeAddress(address expectedDeployer) view returns (address)"];
+          const factory = new ethers.Contract(currentFactory, abi, provider);
+
+          const expectedAddress = await factory.computeAddress(
+            ethers.getAddress(ownerAddress.toLowerCase())
+          );
+
+          const isCurrent =
+            expectedAddress.toLowerCase() === schedulerAddress.toLowerCase();
+
+          return NextResponse.json(
+            {
+              isCurrent,
+              currentFactoryAddress: currentFactory,
+              expectedContractAddress: expectedAddress,
+            },
+            { status: 200 }
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
       case "computeAddress": {
         try {
           const { ownerAddress } = params;
@@ -209,7 +247,7 @@ export async function POST(request: Request) {
           const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
           const abi = ["function computeAddress(address expectedDeployer) view returns (address)", "function hasDeployed(address) view returns (bool)"];
           const normalizedAddress = ethers.getAddress(ownerAddress.toLowerCase());
-          const factory = new ethers.Contract("0x48c2A4571C8a7A2074AD153C08488734f3A3411E", abi, provider);
+          const factory = new ethers.Contract(FACTORY_ADDRESS, abi, provider);
           const predicted = await factory.computeAddress(normalizedAddress);
           const alreadyDeployed = await factory.hasDeployed(normalizedAddress);
           return NextResponse.json({ predicted, alreadyDeployed }, { status: 200 });
@@ -234,7 +272,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
               idempotencyKey: crypto.randomUUID(),
               walletId,
-              contractAddress: "0x48c2A4571C8a7A2074AD153C08488734f3A3411E",
+              contractAddress: FACTORY_ADDRESS,
               abiFunctionSignature: "deploy()",
               abiParameters: [],
               feeLevel: "MEDIUM",

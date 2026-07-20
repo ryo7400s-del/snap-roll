@@ -24,6 +24,10 @@ export default function SettingPage() {
       ? window.localStorage.getItem(SCHEDULER_STORAGE_KEY) || ""
       : ""
   );
+  const [outdatedInfo, setOutdatedInfo] = useState<{
+    isCurrent: boolean;
+    expectedContractAddress: string;
+  } | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployStatus, setDeployStatus] = useState<string | null>(null);
 
@@ -256,6 +260,30 @@ export default function SettingPage() {
     if (schedulerAddress) fetchWhitelist();
   }, [schedulerAddress]);
 
+  useEffect(() => {
+    (async () => {
+      if (!schedulerAddress || !wallet) return;
+      const res = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkContractVersion",
+          schedulerAddress,
+          ownerAddress: wallet.address,
+        }),
+      });
+      const data = await res.json();
+      if (typeof data.isCurrent === "boolean" && !data.isCurrent) {
+        setOutdatedInfo({
+          isCurrent: false,
+          expectedContractAddress: data.expectedContractAddress,
+        });
+      } else {
+        setOutdatedInfo(null);
+      }
+    })();
+  }, [schedulerAddress, wallet]);
+
   return (
     <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
       <div style={{ fontSize: 20, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>
@@ -290,6 +318,23 @@ export default function SettingPage() {
       ) : (
         <>
           {/* Contract card */}
+          {outdatedInfo && !outdatedInfo.isCurrent && (
+            <div
+              style={{
+                background: "#FFF4E5",
+                border: "1px solid #F5A623",
+                borderRadius: 14,
+                padding: "12px 14px",
+                marginBottom: 16,
+                fontSize: 12,
+                color: "#8A5A00",
+              }}
+            >
+              <strong>Contract update available.</strong> A newer version of the payroll
+              contract is available with additional features. Deploy a new one below to
+              upgrade (your whitelist and history will need to be re-created).
+            </div>
+          )}
           <div
             style={{
               background: "linear-gradient(135deg,#2E5CFF,#5B8CFF)",
