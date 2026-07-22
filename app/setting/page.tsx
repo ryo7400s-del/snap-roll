@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Papa from "papaparse";
 import { useCircleAuth } from "../components/useCircleAuth";
+import { usePasskey } from "../components/usePasskey";
 
 const FACTORY_ADDRESS = "0x48c2A4571C8a7A2074AD153C08488734f3A3411E";
 
@@ -18,6 +19,20 @@ type WhitelistEntry = {
 
 export default function SettingPage() {
   const { sdk, deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
+
+  const { enabled: passkeyEnabled, loading: passkeyLoading, registerPasskey, setPasskeyEnabled } =
+    usePasskey(wallet?.address);
+
+  const handleTogglePasskey = async () => {
+    if (!passkeyEnabled) {
+      const ok = await registerPasskey();
+      if (!ok) {
+        alert("パスキーの登録に失敗しました。もう一度お試しください。");
+      }
+    } else {
+      await setPasskeyEnabled(false);
+    }
+  };
 
   const [schedulerAddress, setSchedulerAddress] = useState<string>(
     typeof window !== "undefined"
@@ -606,6 +621,61 @@ export default function SettingPage() {
               )}
             </div>
           )}
+
+          {/* パスキー（生体認証/PIN）による送金前確認 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, marginTop: 24 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B1220" strokeWidth={2}>
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span style={{ fontSize: 15, fontWeight: 800, color: "#0B1220" }}>Passkey Lock</span>
+          </div>
+          <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 14 }}>
+            Require biometric or PIN verification before approving payments.
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              background: "#FFFFFF",
+              border: "1px solid #EEF1F6",
+              borderRadius: 16,
+              padding: 14,
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220" }}>
+              {passkeyEnabled ? "Enabled" : "Disabled"}
+            </div>
+            <button
+              onClick={handleTogglePasskey}
+              disabled={passkeyLoading}
+              style={{
+                width: 48,
+                height: 28,
+                borderRadius: 14,
+                border: "none",
+                cursor: "pointer",
+                background: passkeyEnabled ? "#2E5CFF" : "#E3E7EF",
+                position: "relative",
+                opacity: passkeyLoading ? 0.6 : 1,
+              }}
+            >
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  position: "absolute",
+                  top: 3,
+                  left: passkeyEnabled ? 23 : 3,
+                  transition: "left 0.15s",
+                }}
+              />
+            </button>
+          </div>
 
           {/* Telegram連携 */}
           <div style={{ fontSize: 15, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>

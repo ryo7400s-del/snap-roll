@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
     "@supabase/supabase-js": "^2.110.6",
     "cookies-next": "^6.1.1",
     "ethers": "^6.17.0",

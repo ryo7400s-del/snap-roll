@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useCircleAuth } from "../components/useCircleAuth";
+import { usePasskey } from "../components/usePasskey";
 
 type PendingSchedule = {
   id: string;
@@ -22,6 +23,8 @@ function formatUsdc(amount: string) {
 
 export default function ApprovePage() {
   const { sdk, loginResult, wallet, restoring, login, logout } = useCircleAuth();
+
+  const { enabled: passkeyEnabled, verifyPasskey } = usePasskey(wallet?.address);
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
@@ -76,6 +79,15 @@ export default function ApprovePage() {
     if (!sdk || !loginResult || !wallet) {
       setStatus("Please sign in first");
       return;
+    }
+
+    if (passkeyEnabled) {
+      setStatus("Verifying passkey...");
+      const ok = await verifyPasskey();
+      if (!ok) {
+        setStatus("Passkey verification failed or cancelled");
+        return;
+      }
     }
 
     setProcessingId(item.id);
@@ -200,6 +212,15 @@ export default function ApprovePage() {
     if (!sdk || !loginResult || !wallet) {
       setStatus("Please sign in first");
       return;
+    }
+
+    if (passkeyEnabled) {
+      setStatus("Verifying passkey...");
+      const ok = await verifyPasskey();
+      if (!ok) {
+        setStatus("Passkey verification failed or cancelled");
+        return;
+      }
     }
     const items = pendingList.filter((p) => selectedIds.has(p.id));
     if (items.length === 0) {
