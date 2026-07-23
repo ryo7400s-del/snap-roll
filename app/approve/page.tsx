@@ -33,6 +33,7 @@ export default function ApprovePage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchProcessing, setBatchProcessing] = useState(false);
+  const [whitelistSet, setWhitelistSet] = useState<Set<string>>(new Set());
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -67,17 +68,35 @@ export default function ApprovePage() {
     setPendingList(data.pending || []);
     setPendingLoading(false);
   };
+  const fetchWhitelist = async (address: string) => {
+    if (!address) return;
+    const res = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "getWhitelist", schedulerAddress: address }),
+    });
+    const data = await res.json();
+    const set = new Set<string>((data.whitelist || []).map((a: string) => a.toLowerCase()));
+    setWhitelistSet(set);
+  };
 
   // ログイン・ウォレット取得が完了したら、自動で保留一覧を取得する
   useEffect(() => {
     if (loginResult && wallet && schedulerAddress) {
       fetchPending(schedulerAddress);
+      fetchWhitelist(schedulerAddress);
     }
   }, [loginResult, wallet, schedulerAddress]);
 
   const handleApprove = async (item: PendingSchedule) => {
     if (!sdk || !loginResult || !wallet) {
       setStatus("Please sign in first");
+      return;
+    }
+
+    const recipientLower = item.recipient.toLowerCase();
+    if (whitelistSet.size > 0 && !whitelistSet.has(recipientLower)) {
+      setStatus("This address is not whitelisted. Approval blocked.");
       return;
     }
 
@@ -226,6 +245,16 @@ export default function ApprovePage() {
     const items = pendingList.filter((p) => selectedIds.has(p.id));
     if (items.length === 0) {
       setStatus("No schedules selected");
+      return;
+    }
+
+    const nonWhitelisted = items.filter(
+      (i) => whitelistSet.size > 0 && !whitelistSet.has(i.recipient.toLowerCase())
+    );
+    if (nonWhitelisted.length > 0) {
+      setStatus(
+        `${nonWhitelisted.length} selected schedule(s) go to non-whitelisted addresses. Approval blocked.`
+      );
       return;
     }
 
@@ -483,7 +512,9 @@ export default function ApprovePage() {
           ) : pendingList.length === 0 ? (
             <div style={{ fontSize: 12, color: "#9AA3B2" }}>No pending schedules</div>
           ) : (
-            pendingList.map((item) => (
+            pendingList.map((item) => {
+              const isWhitelisted = whitelistSet.size === 0 || whitelistSet.has(item.recipient.toLowerCase());
+              return (
               <div
                 key={item.id}
                 style={{
@@ -510,6 +541,22 @@ export default function ApprovePage() {
                     ${formatUsdc(item.amount)}
                   </div>
                 </div>
+                {!isWhitelisted && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#E5484D",
+                      background: "#FDEDED",
+                      borderRadius: 8,
+                      padding: "4px 8px",
+                      display: "inline-block",
+                      marginBottom: 8,
+                    }}
+                  >
+                    ⚠ Not whitelisted — approval disabled
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 12 }}>
                   {item.currency || "USDC"} ·{" "}
                   {new Date(item.execute_after * 1000).toLocaleDateString()}
@@ -518,7 +565,7 @@ export default function ApprovePage() {
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     onClick={() => handleApprove(item)}
-                    disabled={processingId === item.id}
+                    disabled={processingId === item.id || !isWhitelisted}
                     style={{
                       flex: 1,
                       background: "#2E5CFF",
@@ -554,7 +601,8 @@ export default function ApprovePage() {
                   </button>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </>
       )}
