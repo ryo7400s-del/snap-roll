@@ -9,6 +9,7 @@ const supabase = createClient(
 const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
 const FACTORY_ADDRESS = "0x48c2A4571C8a7A2074AD153C08488734f3A3411E";
+const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
 
 export async function POST(request: Request) {
   try {
@@ -345,6 +346,32 @@ export async function POST(request: Request) {
               contractAddress: schedulerAddress,
               abiFunctionSignature: "addToWhitelistBatch(address[])",
               abiParameters: [accounts],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
+      case "registerScheduler": {
+        const { userToken, walletId, schedulerAddress, name } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: SCHEDULER_REGISTRY_ADDRESS,
+              abiFunctionSignature: "register(address,string)",
+              abiParameters: [schedulerAddress, name || ""],
               feeLevel: "MEDIUM",
             }),
           }

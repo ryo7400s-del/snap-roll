@@ -136,6 +136,30 @@ export default function SettingPage() {
       persistScheduler(checkData.predicted);
       setDeployStatus("Registering contract...");
       await handleRegisterApprover(checkData.predicted);
+      setDeployStatus("Registering in SchedulerRegistry...");
+      const registryRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "registerScheduler",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          schedulerAddress: checkData.predicted,
+          name: "",
+        }),
+      });
+      const registryData = await registryRes.json();
+      if (registryData.challengeId) {
+        sdk.setAuthentication({
+          userToken: loginResult.userToken,
+          encryptionKey: loginResult.encryptionKey,
+        });
+        sdk.execute(registryData.challengeId, (regError: unknown) => {
+          if (regError) {
+            console.error("SchedulerRegistry registration failed:", regError);
+          }
+        });
+      }
       setDeploying(false);
     });
   };
