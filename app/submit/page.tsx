@@ -31,7 +31,7 @@ export default function SubmitPage() {
   };
 
   const handleSubmit = async () => {
-    setStatus("送信中...");
+    setStatus("Submitting...");
 
     const payload = entries
       .filter((e) => e.recipient && e.amount && e.executeAfter)
@@ -42,7 +42,7 @@ export default function SubmitPage() {
       }));
 
     if (payload.length === 0) {
-      setStatus("有効な入力がありません");
+      setStatus("No valid entries");
       return;
     }
 
@@ -58,20 +58,20 @@ export default function SubmitPage() {
     const data = await res.json();
 
     if (data.error) {
-      setStatus("送信失敗: " + JSON.stringify(data));
+      setStatus("Submission failed: " + JSON.stringify(data));
       return;
     }
 
     setStatus(
-      `申請完了（${data.submitted.length}件）。責任者への通知を送信しました。責任者の承認をお待ちください。`
+      `Submitted (${data.submitted.length} item(s)). Approvers have been notified. Please wait for approval.`
     );
     setEntries([{ recipient: "", amount: "", executeAfter: "" }]);
   };
 
   return (
     <main style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>給与スケジュール申請</h1>
-      <p>入力した内容は責任者の承認後にオンチェーンへ登録されます。</p>
+      <h1>Payroll Schedule Request</h1>
+      <p>Entries will be recorded on-chain after approver confirmation.</p>
 
       {entries.map((entry, i) => (
         <div
@@ -87,7 +87,7 @@ export default function SubmitPage() {
           }}
         >
           <label>
-            受取人アドレス
+            Recipient Address
             <input
               type="text"
               value={entry.recipient}
@@ -97,7 +97,7 @@ export default function SubmitPage() {
             />
           </label>
           <label>
-            金額（USDC最小単位）
+            Amount (USDC base units)
             <input
               type="text"
               value={entry.amount}
@@ -107,7 +107,7 @@ export default function SubmitPage() {
             />
           </label>
           <label>
-            実行可能時刻
+            Execution Time
             <input
               type="datetime-local"
               value={entry.executeAfter}
@@ -116,14 +116,14 @@ export default function SubmitPage() {
             />
           </label>
           {entries.length > 1 && (
-            <button onClick={() => removeRow(i)}>この行を削除</button>
+            <button onClick={() => removeRow(i)}>Remove row</button>
           )}
         </div>
       ))}
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <button onClick={addRow}>+ 行を追加</button>
-        <button onClick={handleSubmit}>申請を送信</button>
+        <button onClick={addRow}>+ Add row</button>
+        <button onClick={handleSubmit}>Submit Request</button>
       </div>
 
       {status && <p style={{ marginTop: 16 }}>{status}</p>}
