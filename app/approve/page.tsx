@@ -198,7 +198,6 @@ export default function ApprovePage() {
       encryptionKey: loginResult.encryptionKey,
     });
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
-      setStatus("DEBUG result: " + JSON.stringify(result));
       setProcessingId(null);
       if (error) {
         const errAny = error as any;
