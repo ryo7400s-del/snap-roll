@@ -201,8 +201,19 @@ This runs from a **disposable, single-purpose wallet** (`EXECUTOR_PRIVATE_KEY`) 
 
 In short, this key can only push forward transactions a human approver has already signed off on — it cannot touch any customer configuration (whitelist, contract ownership, recipients, or amounts). This isn't just an operational convention: `executeSchedule` is a public, unpermissioned function on the contract, and the USDC transfer inside it is hardcoded as `transferFrom(owner, recipient, amount)` — the executor's address never appears as a fund source or destination, so even a compromised executor key can only trigger already-authorized transfers, never redirect them.
 
+**Impersonation is not possible.** No function that matters — `createScheduleFor`, `createSchedulesForBatch`, `addToWhitelistBatch`, `claimOwner`, `transferOwner` — can be called successfully by any address other than the scheduler's actual `owner`; each is gated by the `onlyOwner` modifier, which checks `msg.sender == owner` on-chain. The executor wallet is not, and can never become, that owner. Holding the executor's private key gives no path to acting *as* the company — it only lets you call the one function (`executeSchedule`) that was deliberately left public, and even that function re-validates the whitelist and can only move funds the real owner already authorized via their own `approve()` call and on-chain schedule.
+
+**This setup is intentionally simplified for the hackathon, not a production recommendation.** Running a single long-lived private key in GitHub Actions secrets is fine for a testnet demo — it's easy to reason about and easy to show — but it is not how this would be run against real funds on mainnet. A production deployment would move `executeSchedule` off of a single centrally-held key and onto a decentralized keeper/automation network, so no single leaked secret can even pause execution, let alone touch funds. Concrete options for that migration:
+
+- **[Chainlink Automation](https://chain.link/automation)** — decentralized upkeep network; register `executeSchedule` as a time-based or custom-logic upkeep so a committee of independent nodes (not one key) triggers execution.
+- **[Gelato Network](https://www.gelato.network/)** — decentralized executor-bot network with native support for scheduled/cron-style and condition-based task execution across EVM chains.
+- **[OpenZeppelin Defender](https://www.openzeppelin.com/defender)** — managed automation and operations tooling with built-in monitoring, alerting, and access controls for exactly this kind of "call this function on a schedule" pattern.
+
+Any of these would remove the single-private-key dependency entirely — execution would be triggered by a decentralized network rather than one GitHub Actions secret, spreading out (rather than concentrating) the operational risk, while `executeSchedule`'s existing on-chain guards (whitelist re-check, fixed `transferFrom(owner, recipient, amount)`) stay exactly as they are.
+
 ### Chain
 ```
 Arc testnet RPC: https://arc-testnet.drpc.org
 Factory contract: 0x48c2A4571C8a7A2074AD153C08488734f3A3411E
 ```
+
