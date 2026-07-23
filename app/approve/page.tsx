@@ -568,15 +568,15 @@ export default function ApprovePage() {
                     disabled={processingId === item.id || !isWhitelisted}
                     style={{
                       flex: 1,
-                      background: "#2E5CFF",
                       border: "none",
                       borderRadius: 10,
                       padding: "10px 0",
+                      background: isWhitelisted ? "#2E5CFF" : "#C7CDDB",
                       color: "#fff",
                       fontSize: 12,
                       fontWeight: 700,
                       cursor: "pointer",
-                      opacity: processingId === item.id ? 0.6 : 1,
+                      opacity: processingId === item.id ? 0.6 : isWhitelisted ? 1 : 0.7,
                     }}
                   >
                     {processingId === item.id ? "Processing..." : "Approve"}
