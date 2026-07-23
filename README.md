@@ -1,6 +1,6 @@
 # SnapRoll
 
-**SnapRoll** is a cross-border payroll app built on Circle User-Controlled Wallets, deployed on the **Arc testnet**. It lets a company schedule USDC/EURC payroll payments, have them approved by a responsible party via Telegram, and track everything on an on-chain-verified dashboard.
+**SnapRoll** is a cross-border payroll app built on Circle User-Controlled Wallets, deployed on the **Arc testnet**. It lets a company schedule USDC payroll payments, have them approved by a responsible party via Telegram, and track everything on an on-chain-verified dashboard.
 
 Repo: https://github.com/ryo7400s-del/snap-roll
 
