@@ -48,6 +48,7 @@ export default function SettingPage() {
 
   const [whitelistMode, setWhitelistMode] = useState<"manual" | "csv">("manual");
   const [manualAddress, setManualAddress] = useState("");
+  const [manualLabel, setManualLabel] = useState("");
   const [csvEntries, setCsvEntries] = useState<WhitelistEntry[]>([]);
   const [whitelisted, setWhitelisted] = useState<WhitelistEntry[]>([]);
   const [whitelistStatus, setWhitelistStatus] = useState<string | null>(null);
@@ -142,8 +143,9 @@ export default function SettingPage() {
   // --- ホワイトリスト登録 ---------------------------------------------
   const handleAddManual = () => {
     if (!manualAddress) return;
-    setWhitelisted((prev) => [...prev, { address: manualAddress, name: "" }]);
+    setWhitelisted((prev) => [...prev, { address: manualAddress, name: manualLabel }]);
     setManualAddress("");
+    setManualLabel("");
   };
 
   // CSVヘッダーの表記ゆれ（Address/address、Label/name等）を吸収するため、
@@ -491,6 +493,21 @@ export default function SettingPage() {
                 value={manualAddress}
                 onChange={(e) => setManualAddress(e.target.value)}
                 placeholder="Paste wallet address (0x...)"
+                style={{
+                  width: "100%",
+                  border: "1px solid #EEF1F6",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  marginBottom: 10,
+                  background: "#F7F9FC",
+                  boxSizing: "border-box",
+                }}
+              />
+              <input
+                value={manualLabel}
+                onChange={(e) => setManualLabel(e.target.value)}
+                placeholder="Label (optional, e.g. John Smith)"
                 style={{
                   width: "100%",
                   border: "1px solid #EEF1F6",
