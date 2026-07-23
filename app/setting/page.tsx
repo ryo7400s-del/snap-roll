@@ -89,6 +89,7 @@ export default function SettingPage() {
     });
     const checkData = await checkRes.json();
 
+    setDeployStatus("DEBUG checkData: " + JSON.stringify(checkData));
     if (checkData.alreadyDeployed) {
       persistScheduler(checkData.predicted);
       setDeployStatus("Using already deployed contract. Registering as approver...");
