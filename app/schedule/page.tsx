@@ -145,20 +145,18 @@ export default function SchedulePage() {
       },
     });
   };
-
-
   const handleSubmit = async () => {
     if (!schedulerAddress) {
-      setSubmitStatus("先にSettingでコントラクトを設定してください");
+      setSubmitStatus("Please set up the contract in Settings first");
       return;
     }
     const entries = mode === "manual" ? manualList : csvEntries;
     if (entries.length === 0) {
-      setSubmitStatus("登録するスケジュールがありません");
+      setSubmitStatus("No schedules to register");
       return;
     }
 
-    setSubmitStatus("送信中...");
+    setSubmitStatus("Submitting...");
 
     const payload = entries.map((e) => ({
       recipient: e.address,
@@ -181,12 +179,12 @@ export default function SchedulePage() {
     const data = await res.json();
 
     if (data.error) {
-      setSubmitStatus("送信失敗: " + JSON.stringify(data));
+      setSubmitStatus("Submission failed: " + JSON.stringify(data));
       return;
     }
 
     setSubmitStatus(
-      `申請完了（${data.submitted.length}件）。責任者への通知を送信しました。`
+      `Submitted (${data.submitted.length} item(s)). Approvers have been notified.`
     );
     setManualList([]);
     setCsvEntries([]);
