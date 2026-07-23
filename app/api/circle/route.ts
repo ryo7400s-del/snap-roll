@@ -158,6 +158,50 @@ export async function POST(request: Request) {
         }
       }
 
+
+      case "getWhitelistLabels": {
+        try {
+          const { schedulerAddress } = params;
+          const { data, error } = await supabase
+            .from("whitelist_labels")
+            .select("wallet_address, label")
+            .eq("scheduler_address", schedulerAddress.toLowerCase());
+          if (error) throw error;
+          const labels: Record<string, string> = {};
+          for (const row of data || []) {
+            labels[row.wallet_address.toLowerCase()] = row.label;
+          }
+          return NextResponse.json({ labels }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+      case "saveWhitelistLabels": {
+        try {
+          const { schedulerAddress, entries } = params;
+          const rows = (entries || [])
+            .filter((e: { address: string; label?: string }) => e.label && e.label.trim())
+            .map((e: { address: string; label?: string }) => ({
+              scheduler_address: schedulerAddress.toLowerCase(),
+              wallet_address: e.address.toLowerCase(),
+              label: e.label,
+            }));
+          if (rows.length > 0) {
+            const { error } = await supabase
+              .from("whitelist_labels")
+              .upsert(rows, { onConflict: "scheduler_address,wallet_address" });
+            if (error) throw error;
+          }
+          return NextResponse.json({ success: true }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+
       case "checkAllowance": {
         try {
           const { ownerAddress, schedulerAddress } = params;

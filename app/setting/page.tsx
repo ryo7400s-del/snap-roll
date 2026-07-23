@@ -52,6 +52,7 @@ export default function SettingPage() {
   const [whitelisted, setWhitelisted] = useState<WhitelistEntry[]>([]);
   const [whitelistStatus, setWhitelistStatus] = useState<string | null>(null);
   const [whitelistList, setWhitelistList] = useState<string[]>([]);
+  const [whitelistLabels, setWhitelistLabels] = useState<Record<string, string>>({});
   const [whitelistListOpen, setWhitelistListOpen] = useState(false);
   const [whitelistListLoading, setWhitelistListLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -178,6 +179,15 @@ export default function SettingPage() {
     });
     const data = await res.json();
     setWhitelistList(data.whitelist || []);
+
+    const labelRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "getWhitelistLabels", schedulerAddress }),
+    });
+    const labelData = await labelRes.json();
+    setWhitelistLabels(labelData.labels || {});
+
     setWhitelistListLoading(false);
   };
 
@@ -230,12 +240,21 @@ export default function SettingPage() {
       userToken: loginResult.userToken,
       encryptionKey: loginResult.encryptionKey,
     });
-    sdk.execute(data.challengeId, (error: unknown, result: any) => {
+    sdk.execute(data.challengeId, async (error: unknown, result: any) => {
       if (error) {
         setWhitelistStatus("Registration failed: " + JSON.stringify(error));
         return;
       }
       setWhitelistStatus(`Registered successfully (${entries.length} item(s))`);
+      await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "saveWhitelistLabels",
+          schedulerAddress,
+          entries: entries.map((e) => ({ address: e.address, label: e.name })),
+        }),
+      });
       setCsvEntries([]);
       setWhitelisted([]);
       fetchWhitelist();
@@ -615,6 +634,11 @@ export default function SettingPage() {
                         i < whitelistList.length - 1 ? "1px solid #F1F3F8" : "none",
                     }}
                   >
+                    {whitelistLabels[addr.toLowerCase()] && (
+                      <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
+                        {whitelistLabels[addr.toLowerCase()]}
+                      </div>
+                    )}
                     {addr}
                   </div>
                 ))
