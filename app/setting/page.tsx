@@ -89,7 +89,15 @@ export default function SettingPage() {
     });
     const checkData = await checkRes.json();
 
-    setDeployStatus("DEBUG checkData: " + JSON.stringify(checkData));
+
+    if (!checkRes.ok || !checkData.predicted) {
+      setDeployStatus(
+        "Failed to compute contract address (network issue?). Please try again: " +
+          JSON.stringify(checkData)
+      );
+      setDeploying(false);
+      return;
+    }
     if (checkData.alreadyDeployed) {
       persistScheduler(checkData.predicted);
       setDeployStatus("Using already deployed contract. Registering as approver...");
