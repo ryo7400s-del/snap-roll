@@ -569,8 +569,28 @@ export default function SettingPage() {
                 CSV columns: address, name (optional)
               </div>
               {csvEntries.length > 0 && (
-                <div style={{ fontSize: 11, color: "#6B7688" }}>
-                  {csvEntries.length} entries loaded
+                <div style={{ overflowX: "auto", marginTop: 4 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "#9AA3B2" }}>
+                        <th style={{ padding: "4px 6px" }}>Label</th>
+                        <th style={{ padding: "4px 6px" }}>Address</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvEntries.map((e, i) => (
+                        <tr key={i} style={{ borderTop: "1px solid #F1F3F8" }}>
+                          <td style={{ padding: "4px 6px" }}>{e.name || "—"}</td>
+                          <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>
+                            {e.address.slice(0, 6)}...{e.address.slice(-4)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 10, color: "#9AA3B2", marginTop: 6 }}>
+                    {csvEntries.length} entries loaded
+                  </div>
                 </div>
               )}
             </div>
