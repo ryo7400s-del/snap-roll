@@ -27,7 +27,7 @@ export default function SettingPage() {
     if (!passkeyEnabled) {
       const ok = await registerPasskey();
       if (!ok) {
-        alert("パスキーの登録に失敗しました。もう一度お試しください。");
+        alert("Failed to register passkey. Please try again.");
       }
     } else {
       await setPasskeyEnabled(false);
@@ -74,11 +74,11 @@ export default function SettingPage() {
   // 未デプロイならdeploy()を実行してからレジスターまで自動で進める。
   const handleDeploy = async () => {
     if (!loginResult || !wallet) {
-      setDeployStatus("先にログインしてください");
+      setDeployStatus("Please sign in first");
       return;
     }
     setDeploying(true);
-    setDeployStatus("確認中...");
+    setDeployStatus("Checking...");
 
     const checkRes = await fetch("/api/circle", {
       method: "POST",
@@ -89,13 +89,13 @@ export default function SettingPage() {
 
     if (checkData.alreadyDeployed) {
       persistScheduler(checkData.predicted);
-      setDeployStatus("既にデプロイ済みのコントラクトを使用します。責任者として登録します...");
+      setDeployStatus("Using already deployed contract. Registering as approver...");
       await handleRegisterApprover(checkData.predicted);
       setDeploying(false);
       return;
     }
 
-    setDeployStatus("デプロイ中...");
+    setDeployStatus("Deploying...");
 
     const res = await fetch("/api/circle", {
       method: "POST",
@@ -109,13 +109,13 @@ export default function SettingPage() {
     const data = await res.json();
 
     if (!data.challengeId) {
-      setDeployStatus("デプロイ失敗: " + JSON.stringify(data));
+      setDeployStatus("Deploy failed: " + JSON.stringify(data));
       setDeploying(false);
       return;
     }
 
     if (!sdk) {
-      setDeployStatus("SDKが初期化されていません。ページを再読み込みしてください。");
+      setDeployStatus("SDK not initialized. Please reload the page.");
       setDeploying(false);
       return;
     }
@@ -127,12 +127,12 @@ export default function SettingPage() {
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
       if (error) {
         setDeploying(false);
-        setDeployStatus("デプロイ失敗: " + JSON.stringify(error));
+        setDeployStatus("Deploy failed: " + JSON.stringify(error));
         return;
       }
-      setDeployStatus("デプロイ成功。アドレスを確認しています...");
+      setDeployStatus("Deploy successful. Confirming address...");
       persistScheduler(checkData.predicted);
-      setDeployStatus("コントラクトを登録しています...");
+      setDeployStatus("Registering contract...");
       await handleRegisterApprover(checkData.predicted);
       setDeploying(false);
     });
@@ -191,17 +191,17 @@ export default function SettingPage() {
 
   const handleSubmitWhitelist = async () => {
     if (!loginResult || !wallet || !schedulerAddress) {
-      setWhitelistStatus("ログイン・コントラクトアドレスの設定が必要です");
+      setWhitelistStatus("Sign-in and contract address setup required");
       return;
     }
 
     const entries = whitelistMode === "manual" ? whitelisted : csvEntries;
     if (entries.length === 0) {
-      setWhitelistStatus("登録するアドレスがありません");
+      setWhitelistStatus("No addresses to register");
       return;
     }
 
-    setWhitelistStatus("登録中...");
+    setWhitelistStatus("Registering...");
 
     const res = await fetch("/api/circle", {
       method: "POST",
@@ -217,12 +217,12 @@ export default function SettingPage() {
     const data = await res.json();
 
     if (!data.challengeId) {
-      setWhitelistStatus("チャレンジ作成失敗: " + JSON.stringify(data));
+      setWhitelistStatus("Challenge creation failed: " + JSON.stringify(data));
       return;
     }
 
     if (!sdk) {
-      setWhitelistStatus("SDKが初期化されていません。ページを再読み込みしてください。");
+      setWhitelistStatus("SDK not initialized. Please reload the page.");
       return;
     }
 
@@ -232,10 +232,10 @@ export default function SettingPage() {
     });
     sdk.execute(data.challengeId, (error: unknown, result: any) => {
       if (error) {
-        setWhitelistStatus("登録失敗: " + JSON.stringify(error));
+        setWhitelistStatus("Registration failed: " + JSON.stringify(error));
         return;
       }
-      setWhitelistStatus(`登録成功（${entries.length}件）`);
+      setWhitelistStatus(`Registered successfully (${entries.length} item(s))`);
       setCsvEntries([]);
       setWhitelisted([]);
       fetchWhitelist();
@@ -246,7 +246,7 @@ export default function SettingPage() {
   const handleRegisterApprover = async (addressOverride?: string) => {
     const targetAddress = addressOverride ?? schedulerAddress;
     if (!wallet || !targetAddress) {
-      setTelegramStatus("先にウォレット取得・コントラクト設定が必要です");
+      setTelegramStatus("Wallet and contract setup required first");
       return;
     }
 
@@ -262,13 +262,13 @@ export default function SettingPage() {
     const data = await res.json();
 
     if (!data.id) {
-      setTelegramStatus("登録失敗: " + JSON.stringify(data));
+      setTelegramStatus("Registration failed: " + JSON.stringify(data));
       return;
     }
 
     const link = `https://t.me/arc_payroll_approval_bot?start=${data.id}`;
     setTelegramLink(link);
-    setTelegramStatus("下のリンクからTelegramで通知を有効化してください");
+    setTelegramStatus("Enable Telegram notifications using the link below");
   };
 
   useEffect(() => {
