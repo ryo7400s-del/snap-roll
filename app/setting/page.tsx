@@ -45,6 +45,9 @@ export default function SettingPage() {
   } | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployStatus, setDeployStatus] = useState<string | null>(null);
+  const [registryStatus, setRegistryStatus] = useState<"unknown" | "registered" | "unregistered">("unknown");
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryMessage, setRegistryMessage] = useState<string | null>(null);
 
   const [whitelistMode, setWhitelistMode] = useState<"manual" | "csv">("manual");
   const [manualAddress, setManualAddress] = useState("");
@@ -145,30 +148,6 @@ export default function SettingPage() {
       persistScheduler(checkData.predicted);
       setDeployStatus("Registering contract...");
       await handleRegisterApprover(checkData.predicted);
-      setDeployStatus("Registering in SchedulerRegistry...");
-      const registryRes = await fetch("/api/circle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "registerScheduler",
-          userToken: loginResult.userToken,
-          walletId: wallet.id,
-          schedulerAddress: checkData.predicted,
-          name: "",
-        }),
-      });
-      const registryData = await registryRes.json();
-      if (registryData.challengeId) {
-        sdk.setAuthentication({
-          userToken: loginResult.userToken,
-          encryptionKey: loginResult.encryptionKey,
-        });
-        sdk.execute(registryData.challengeId, (regError: unknown) => {
-          if (regError) {
-            console.error("SchedulerRegistry registration failed:", regError);
-          }
-        });
-      }
       setDeploying(false);
     });
   };
@@ -352,6 +331,58 @@ export default function SettingPage() {
       }
     })();
   }, [schedulerAddress, wallet]);
+
+  useEffect(() => {
+    (async () => {
+      if (!wallet) return;
+      const res = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getRegistryStatus", ownerAddress: wallet.address }),
+      });
+      const data = await res.json();
+      setRegistryStatus(data.isRegistered ? "registered" : "unregistered");
+    })();
+  }, [wallet]);
+
+  const handleRegisterInRegistry = async () => {
+    if (!loginResult || !wallet || !schedulerAddress || !sdk) {
+      setRegistryMessage("Sign in and deploy a contract first");
+      return;
+    }
+    setRegistryLoading(true);
+    setRegistryMessage("Registering...");
+    const res = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "registerScheduler",
+        userToken: loginResult.userToken,
+        walletId: wallet.id,
+        schedulerAddress,
+        name: "",
+      }),
+    });
+    const data = await res.json();
+    if (!data.challengeId) {
+      setRegistryMessage("Registration failed: " + JSON.stringify(data));
+      setRegistryLoading(false);
+      return;
+    }
+    sdk.setAuthentication({
+      userToken: loginResult.userToken,
+      encryptionKey: loginResult.encryptionKey,
+    });
+    sdk.execute(data.challengeId, (error: unknown) => {
+      setRegistryLoading(false);
+      if (error) {
+        setRegistryMessage("Registration failed: " + JSON.stringify(error));
+        return;
+      }
+      setRegistryMessage("Registered successfully");
+      setRegistryStatus("registered");
+    });
+  };
 
   return (
     <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
@@ -808,6 +839,41 @@ export default function SettingPage() {
               {telegramLink}
             </a>
           )}
+
+          <div style={{ borderTop: "1px solid #F1F3F8", marginTop: 28, paddingTop: 20 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>
+              Multi-Device Sync (Optional)
+            </div>
+            <div style={{ fontSize: 12, color: "#6B7688", marginBottom: 12 }}>
+              Registering your contract on-chain lets you find it automatically from any device or
+              browser, even if this one's local data is lost or cleared. This is optional — SnapRoll
+              works fine on a single device without it.
+            </div>
+            {registryStatus === "registered" ? (
+              <div style={{ fontSize: 12, color: "#16A34A", fontWeight: 700 }}>✓ Registered</div>
+            ) : (
+              <button
+                onClick={handleRegisterInRegistry}
+                disabled={registryLoading || !schedulerAddress}
+                style={{
+                  background: "#F1F3F8",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "12px 20px",
+                  color: "#0B1220",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  opacity: registryLoading || !schedulerAddress ? 0.6 : 1,
+                }}
+              >
+                {registryLoading ? "Registering..." : "Register for Multi-Device Sync"}
+              </button>
+            )}
+            {registryMessage && (
+              <div style={{ fontSize: 12, color: "#6B7688", marginTop: 8 }}>{registryMessage}</div>
+            )}
+          </div>
         </>
       )}
     </div>

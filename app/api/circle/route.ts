@@ -381,6 +381,23 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      case "getRegistryStatus": {
+        try {
+          const { ownerAddress } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const abi = ["function schedulerOf(address) view returns (address)"];
+          const normalizedAddress = ethers.getAddress(ownerAddress.toLowerCase());
+          const registry = new ethers.Contract(SCHEDULER_REGISTRY_ADDRESS, abi, provider);
+          const registered = await registry.schedulerOf(normalizedAddress);
+          const isRegistered = registered !== ethers.ZeroAddress;
+          return NextResponse.json({ isRegistered, registeredScheduler: registered }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
       case "createSchedulesBatch": {
         const { userToken, walletId, schedulerAddress, recipients, amounts, executeAfters } = params;
         const res = await fetch(
