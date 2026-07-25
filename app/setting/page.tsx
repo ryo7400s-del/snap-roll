@@ -821,7 +821,7 @@ export default function SettingPage() {
                 opacity: passkeyLoading ? 0.6 : 1,
               }}
             >
-              {passkeyLoading ? "Verifying..." : "+ Add this device"}
+              {passkeyLoading ? "Verifying..." : "+ Add another device"}
             </button>
           )}
 
