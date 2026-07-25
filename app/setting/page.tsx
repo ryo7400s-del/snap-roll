@@ -20,8 +20,15 @@ type WhitelistEntry = {
 export default function SettingPage() {
   const { sdk, deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
 
-  const { enabled: passkeyEnabled, loading: passkeyLoading, registerPasskey, setPasskeyEnabled } =
-    usePasskey(wallet?.address);
+
+  const [schedulerAddress, setSchedulerAddress] = useState<string>(
+    typeof window !== "undefined"
+      ? window.localStorage.getItem(SCHEDULER_STORAGE_KEY) || ""
+      : ""
+  );
+
+  const { enabled: passkeyEnabled, loading: passkeyLoading, registerPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus } =
+    usePasskey(wallet?.address, schedulerAddress);
 
   const handleTogglePasskey = async () => {
     if (!passkeyEnabled) {
@@ -33,12 +40,6 @@ export default function SettingPage() {
       await setPasskeyEnabled(false);
     }
   };
-
-  const [schedulerAddress, setSchedulerAddress] = useState<string>(
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(SCHEDULER_STORAGE_KEY) || ""
-      : ""
-  );
   const [outdatedInfo, setOutdatedInfo] = useState<{
     isCurrent: boolean;
     expectedContractAddress: string;
@@ -801,6 +802,56 @@ export default function SettingPage() {
               />
             </button>
           </div>
+
+          {passkeyEnabled && (
+            <div style={{ marginBottom: 20 }}>
+              {resetStatus === "pending" ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#8A5A00",
+                    background: "#FFF4E5",
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                  }}
+                >
+                  Waiting for an approver to confirm the reset via Telegram…
+                </div>
+              ) : resetStatus === "approved" ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#16A34A",
+                    background: "#EAFBF0",
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                  }}
+                >
+                  Reset approved. You can register a new passkey on this device now.
+                </div>
+              ) : (
+                <button
+                  onClick={requestPasskeyReset}
+                  style={{
+                    background: "none",
+                    border: "1px solid #E5484D",
+                    borderRadius: 12,
+                    padding: "10px 16px",
+                    color: "#E5484D",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Reset Passkey (via Telegram)
+                </button>
+              )}
+              <div style={{ fontSize: 11, color: "#9AA3B2", marginTop: 8 }}>
+                Lost this device? An approver must confirm the reset on Telegram before you can
+                register a passkey on a new one.
+              </div>
+            </div>
+          )}
 
           {/* Telegram連携 */}
           <div style={{ fontSize: 15, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>

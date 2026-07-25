@@ -58,6 +58,37 @@ export async function POST(request: Request) {
             await sendTelegramMessage(chatId, `❌ Schedule ${scheduleId} has been rejected.`);
           }
         }
+      } else if (data.startsWith("approve_passkey_reset:")) {
+        const requestId = data.split(":")[1];
+
+        const { data: reqRow } = await supabase
+          .from("passkey_reset_requests")
+          .select("*")
+          .eq("id", requestId)
+          .eq("status", "pending")
+          .single();
+
+        if (!reqRow) {
+          await answerCallbackQuery(cq.id, "This request is no longer valid.");
+        } else {
+          await supabase
+            .from("passkey_credentials")
+            .delete()
+            .eq("wallet_address", reqRow.wallet_address);
+
+          await supabase
+            .from("passkey_reset_requests")
+            .update({ status: "approved", resolved_at: new Date().toISOString() })
+            .eq("id", requestId);
+
+          await answerCallbackQuery(cq.id, "Passkey reset approved.");
+          if (chatId) {
+            await sendTelegramMessage(
+              chatId,
+              `✅ Passkey reset approved for wallet ${reqRow.wallet_address}. All old passkeys have been removed; a new one can now be registered.`
+            );
+          }
+        }
       } else {
         await answerCallbackQuery(cq.id, "Unknown action.");
       }

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 
-export function usePasskey(walletAddress: string | undefined) {
+export function usePasskey(walletAddress: string | undefined, schedulerAddress?: string) {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -95,5 +95,44 @@ export function usePasskey(walletAddress: string | undefined) {
     [walletAddress]
   );
 
-  return { enabled, loading, registerPasskey, verifyPasskey, setPasskeyEnabled };
+
+  const [resetRequestId, setResetRequestId] = useState<string | null>(null);
+  const [resetStatus, setResetStatus] = useState<"idle" | "pending" | "approved" | "rejected">("idle");
+
+  const requestPasskeyReset = useCallback(async () => {
+    if (!walletAddress || !schedulerAddress) return;
+    const res = await fetch("/api/passkey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "requestReset", walletAddress, schedulerAddress }),
+    });
+    const data = await res.json();
+    if (data.requestId) {
+      setResetRequestId(data.requestId);
+      setResetStatus("pending");
+    }
+  }, [walletAddress, schedulerAddress]);
+
+  const checkResetStatus = useCallback(async () => {
+    if (!resetRequestId) return;
+    const res = await fetch("/api/passkey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "getResetStatus", requestId: resetRequestId }),
+    });
+    const data = await res.json();
+    if (data.status === "approved") {
+      setResetStatus("approved");
+      setEnabled(false);
+    } else if (data.status === "rejected") {
+      setResetStatus("rejected");
+    }
+  }, [resetRequestId]);
+
+  useEffect(() => {
+    if (resetStatus !== "pending") return;
+    const interval = setInterval(checkResetStatus, 4000);
+    return () => clearInterval(interval);
+  }, [resetStatus, checkResetStatus]);
+  return { enabled, loading, registerPasskey, verifyPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus };
 }
