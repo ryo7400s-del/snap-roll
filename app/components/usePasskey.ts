@@ -5,6 +5,7 @@ import { startRegistration, startAuthentication } from "@simplewebauthn/browser"
 
 export function usePasskey(walletAddress: string | undefined, schedulerAddress?: string) {
   const [enabled, setEnabled] = useState(false);
+  const [thisDeviceRegistered, setThisDeviceRegistered] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const refreshStatus = useCallback(async () => {
@@ -21,6 +22,12 @@ export function usePasskey(walletAddress: string | undefined, schedulerAddress?:
   useEffect(() => {
     refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!walletAddress || typeof window === "undefined") return;
+    const flag = window.localStorage.getItem(`passkey_registered_${walletAddress}`);
+    setThisDeviceRegistered(flag === "true");
+  }, [walletAddress]);
 
   const verifyPasskey = useCallback(async () => {
     if (!walletAddress) return false;
@@ -85,6 +92,10 @@ export function usePasskey(walletAddress: string | undefined, schedulerAddress?:
       const finishData = await finishRes.json();
       if (finishData.success) {
         setEnabled(true);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(`passkey_registered_${walletAddress}`, "true");
+        }
+        setThisDeviceRegistered(true);
         return true;
       }
       return false;
@@ -149,5 +160,5 @@ export function usePasskey(walletAddress: string | undefined, schedulerAddress?:
     const interval = setInterval(checkResetStatus, 4000);
     return () => clearInterval(interval);
   }, [resetStatus, checkResetStatus]);
-  return { enabled, loading, registerPasskey, verifyPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus };
+  return { enabled, loading, thisDeviceRegistered, registerPasskey, verifyPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus };
 }

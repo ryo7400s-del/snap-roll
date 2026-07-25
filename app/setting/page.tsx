@@ -27,7 +27,7 @@ export default function SettingPage() {
       : ""
   );
 
-  const { enabled: passkeyEnabled, loading: passkeyLoading, registerPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus } =
+  const { enabled: passkeyEnabled, loading: passkeyLoading, thisDeviceRegistered, registerPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus } =
     usePasskey(wallet?.address, schedulerAddress);
 
   const handleTogglePasskey = async () => {
@@ -802,6 +802,28 @@ export default function SettingPage() {
               />
             </button>
           </div>
+
+          {passkeyEnabled && !thisDeviceRegistered && (
+            <button
+              onClick={registerPasskey}
+              disabled={passkeyLoading}
+              style={{
+                width: "100%",
+                background: "#EAF0FF",
+                border: "none",
+                borderRadius: 12,
+                padding: "12px 16px",
+                color: "#2E5CFF",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                marginBottom: 12,
+                opacity: passkeyLoading ? 0.6 : 1,
+              }}
+            >
+              {passkeyLoading ? "Verifying..." : "+ Add this device"}
+            </button>
+          )}
 
           {passkeyEnabled && (
             <div style={{ marginBottom: 20 }}>
