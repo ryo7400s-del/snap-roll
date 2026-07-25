@@ -22,11 +22,52 @@ export function usePasskey(walletAddress: string | undefined, schedulerAddress?:
     refreshStatus();
   }, [refreshStatus]);
 
+  const verifyPasskey = useCallback(async () => {
+    if (!walletAddress) return false;
+    try {
+      const optRes = await fetch("/api/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "authStart", walletAddress }),
+      });
+      if (!optRes.ok) return false;
+      const options = await optRes.json();
+
+      const assertion = await startAuthentication({ optionsJSON: options });
+
+      const verifyRes = await fetch("/api/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "authFinish", walletAddress, assertion }),
+      });
+      const verifyData = await verifyRes.json();
+      return !!verifyData.verified;
+    } catch (e) {
+      console.error("Passkey verification failed:", e);
+      return false;
+    }
+  }, [walletAddress]);
+
   // パスキー新規登録（初回オン時に呼ぶ）
   const registerPasskey = useCallback(async () => {
     if (!walletAddress) return false;
     setLoading(true);
     try {
+      const hasAnyRes = await fetch("/api/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "hasAnyPasskey", walletAddress }),
+      });
+      const hasAnyData = await hasAnyRes.json();
+
+      if (hasAnyData.hasAny) {
+        const verified = await verifyPasskey();
+        if (!verified) {
+          setLoading(false);
+          return false;
+        }
+      }
+
       const optRes = await fetch("/api/passkey", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,34 +94,8 @@ export function usePasskey(walletAddress: string | undefined, schedulerAddress?:
     } finally {
       setLoading(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, verifyPasskey]);
 
-  // 送金直前の認証（handleApprove等から呼ぶ）
-  const verifyPasskey = useCallback(async () => {
-    if (!walletAddress) return false;
-    try {
-      const optRes = await fetch("/api/passkey", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "authStart", walletAddress }),
-      });
-      if (!optRes.ok) return false;
-      const options = await optRes.json();
-
-      const assertion = await startAuthentication({ optionsJSON: options });
-
-      const verifyRes = await fetch("/api/passkey", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "authFinish", walletAddress, assertion }),
-      });
-      const verifyData = await verifyRes.json();
-      return !!verifyData.verified;
-    } catch (e) {
-      console.error("Passkey verification failed:", e);
-      return false;
-    }
-  }, [walletAddress]);
 
   const setPasskeyEnabled = useCallback(
     async (value: boolean) => {

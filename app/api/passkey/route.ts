@@ -187,6 +187,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ verified: true });
   }
+  if (action === "hasAnyPasskey") {
+    const { walletAddress } = body;
+    const { count } = await supabase
+      .from("passkey_credentials")
+      .select("id", { count: "exact", head: true })
+      .eq("wallet_address", walletAddress);
+    return NextResponse.json({ hasAny: (count ?? 0) > 0 });
+  }
+
 
   // --- 有効/無効の取得・切替（Settingトグル用） ---
   if (action === "getStatus") {
