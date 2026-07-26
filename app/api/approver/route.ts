@@ -26,6 +26,17 @@ export async function POST(request: Request) {
           );
         }
 
+        const { data: existing } = await supabase
+          .from("approvers")
+          .select("*")
+          .eq("wallet_address", walletAddress)
+          .eq("scheduler_address", schedulerAddress)
+          .maybeSingle();
+
+        if (existing) {
+          return NextResponse.json(existing, { status: 200 });
+        }
+
         const { data, error } = await supabase
           .from("approvers")
           .insert({
