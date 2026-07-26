@@ -79,6 +79,7 @@ export default function DashboardPage() {
         }),
       });
       const findData = await findRes.json();
+      alert("findData: " + JSON.stringify(findData));
       if (typeof findData.scheduleId !== "number") {
         setPausingId(null);
         return;
