@@ -98,6 +98,7 @@ export default function DashboardPage() {
         }),
       });
       const toggleData = await toggleRes.json();
+      alert("toggleData: " + JSON.stringify(toggleData));
       if (!toggleData.challengeId) {
         setPausingId(null);
         return;
