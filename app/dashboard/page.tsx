@@ -32,7 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const { loginResult, restoring, login } = useCircleAuth();
+  const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
@@ -62,6 +62,66 @@ export default function DashboardPage() {
       setLoading(false);
     })();
   }, [schedulerAddress]);
+  const [pausingId, setPausingId] = useState<string | null>(null);
+
+  const handlePause = async (s: ScheduleRow) => {
+    if (!sdk || !loginResult || !wallet) return;
+    setPausingId(s.id);
+    try {
+      const requestId = "0x" + s.id.replace(/-/g, "").padStart(64, "0");
+      const findRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "findScheduleId",
+          schedulerAddress: s.scheduler_address,
+          requestId,
+        }),
+      });
+      const findData = await findRes.json();
+      if (typeof findData.scheduleId !== "number") {
+        setPausingId(null);
+        return;
+      }
+
+      const toggleRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "toggleSchedule",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          schedulerAddress: s.scheduler_address,
+          scheduleId: findData.scheduleId,
+          active: false,
+        }),
+      });
+      const toggleData = await toggleRes.json();
+      if (!toggleData.challengeId) {
+        setPausingId(null);
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+      sdk.execute(toggleData.challengeId, async (error: unknown) => {
+        setPausingId(null);
+        if (error) return;
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "markPaused", id: s.id }),
+        });
+        setSchedules((prev) =>
+          prev.map((row) => (row.id === s.id ? { ...row, status: "paused" } : row))
+        );
+      });
+    } catch {
+      setPausingId(null);
+    }
+  };
 
   const schedulesByDate = new Map<string, ScheduleRow[]>();
   for (const s of schedules) {
@@ -278,18 +338,38 @@ export default function DashboardPage() {
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
+                      alignItems: "center",
                       padding: "8px 0",
                       borderBottom: "1px solid #F1F3F8",
                       fontSize: 11,
+                      gap: 8,
                     }}
                   >
                     <span>
                       {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
                     </span>
-                    <span style={{ color: "#6B7688" }}>
+                    <span style={{ color: "#6B7688", flex: 1, textAlign: "right", marginRight: 8 }}>
                       ${formatUsdc(s.amount)} ·{" "}
                       {s.execute_after <= now ? "Next run: within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
                     </span>
+                    <button
+                      onClick={() => handlePause(s)}
+                      disabled={pausingId === s.id}
+                      style={{
+                        background: "#FFF4E5",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "4px 10px",
+                        color: "#8A5A00",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: pausingId === s.id ? 0.6 : 1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {pausingId === s.id ? "Pausing..." : "Pause"}
+                    </button>
                   </div>
                 ))
               )}

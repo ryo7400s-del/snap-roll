@@ -398,6 +398,61 @@ export async function POST(request: Request) {
         }
       }
 
+      case "findScheduleId": {
+        try {
+          const { schedulerAddress, requestId } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const abi = [
+            "function scheduleCount() view returns (uint256)",
+            "function getSchedule(uint256) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, bool active, bytes32 requestId))",
+          ];
+          const contract = new ethers.Contract(schedulerAddress, abi, provider);
+          const count = await contract.scheduleCount();
+          let foundId: number | null = null;
+          for (let i = 0; i < Number(count); i++) {
+            const s = await contract.getSchedule(i);
+            if (s.requestId.toLowerCase() === requestId.toLowerCase()) {
+              foundId = i;
+              break;
+            }
+          }
+          if (foundId === null) {
+            return NextResponse.json({ error: "Schedule not found on-chain" }, { status: 404 });
+          }
+          return NextResponse.json({ scheduleId: foundId }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+      case "toggleSchedule": {
+        const { userToken, walletId, schedulerAddress, scheduleId, active } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: schedulerAddress,
+              abiFunctionSignature: "toggleSchedule(uint256,bool)",
+              abiParameters: [scheduleId, active],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "createSchedulesBatch": {
         const { userToken, walletId, schedulerAddress, recipients, amounts, executeAfters } = params;
         const res = await fetch(

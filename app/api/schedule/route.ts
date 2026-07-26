@@ -196,6 +196,23 @@ export async function POST(request: Request) {
         return NextResponse.json(data, { status: 200 });
       }
 
+      case "markPaused": {
+        const { id } = params;
+        if (!id) {
+          return NextResponse.json({ error: "Missing id" }, { status: 400 });
+        }
+        const { data, error } = await supabase
+          .from("pending_schedules")
+          .update({ status: "paused" })
+          .eq("id", id)
+          .select()
+          .single();
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        return NextResponse.json(data, { status: 200 });
+      }
+
       // ダッシュボードのカレンダー表示用: 全ステータス（pending/approved/executed/rejected）の
       // スケジュールを日付ごとに使えるよう取得する。
       case "listAll": {
