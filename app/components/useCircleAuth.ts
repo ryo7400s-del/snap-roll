@@ -103,6 +103,7 @@ export function useCircleAuth() {
         }
 
         // 他ページからログインを開始していた場合、そのページへ結果を引き継いで戻る
+
         const redirectTo = window.localStorage.getItem("postLoginRedirect");
         if (redirectTo && redirectTo !== "/") {
           window.localStorage.setItem("pendingLoginResult", JSON.stringify(result));

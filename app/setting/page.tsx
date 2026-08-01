@@ -20,16 +20,14 @@ type WhitelistEntry = {
 export default function SettingPage() {
   const { sdk, deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
 
-
   const [schedulerAddress, setSchedulerAddress] = useState<string>(
     typeof window !== "undefined"
       ? window.localStorage.getItem(SCHEDULER_STORAGE_KEY) || ""
       : ""
   );
 
-  const { enabled: passkeyEnabled, loading: passkeyLoading, thisDeviceRegistered, registerPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus } =
+  const { enabled: passkeyEnabled, loading: passkeyLoading, thisDeviceRegistered, registerPasskey, verifyPasskey, setPasskeyEnabled, requestPasskeyReset, resetStatus } =
     usePasskey(wallet?.address, schedulerAddress);
-
   const handleTogglePasskey = async () => {
     if (!passkeyEnabled) {
       const ok = await registerPasskey();
@@ -37,6 +35,11 @@ export default function SettingPage() {
         alert("Failed to register passkey. Please try again.");
       }
     } else {
+      const verified = await verifyPasskey();
+      if (!verified) {
+        alert("Passkey verification failed. Cannot disable without confirming your existing passkey.");
+        return;
+      }
       await setPasskeyEnabled(false);
     }
   };
