@@ -156,16 +156,32 @@ export default function SchedulePage() {
       return;
     }
 
-    setSubmitStatus("Submitting...");
-
-    const payload = entries.map((e) => ({
-      recipient: e.address,
-      amount: toUsdcUnits(e.amount),
-      executeAfter: parseDateField(e.date),
-      label: e.label || null,
-      currency: e.currency || "USDC",
-      intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
-    }));
+    const resolvedEntries = [];
+    for (const e of entries) {
+      let recipientAddress = e.address;
+      if (!e.address.startsWith("0x")) {
+        const resolveRes = await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resolveEmail", email: e.address }),
+        });
+        const resolveData = await resolveRes.json();
+        if (!resolveData.walletAddress) {
+          setSubmitStatus(`"${e.address}" is not registered on SnapRoll`);
+          return;
+        }
+        recipientAddress = resolveData.walletAddress;
+      }
+      resolvedEntries.push({
+        recipient: recipientAddress,
+        amount: toUsdcUnits(e.amount),
+        executeAfter: parseDateField(e.date),
+        label: e.label || null,
+        currency: e.currency || "USDC",
+        intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
+      });
+    }
+    const payload = resolvedEntries;
 
     const res = await fetch("/api/schedule", {
       method: "POST",
@@ -287,7 +303,7 @@ export default function SchedulePage() {
               <input
                 value={manualEntry.address}
                 onChange={(e) => setManualEntry({ ...manualEntry, address: e.target.value })}
-                placeholder="Recipient address (0x...)"
+                placeholder="Recipient address or SnapRoll email"
                 style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 8, background: "#F7F9FC", boxSizing: "border-box" }}
               />
               <input

@@ -11,6 +11,7 @@ const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
 export type LoginResult = {
   userToken: string;
   encryptionKey: string;
+  email?: string;
 };
 
 export type Wallet = {
@@ -115,6 +116,7 @@ export function useCircleAuth() {
         persistLoginResult({
           userToken: result.userToken,
           encryptionKey: result.encryptionKey,
+          email: result.oAuthInfo?.socialUserInfo?.email || undefined,
         });
 
         fetch("/api/circle", {
@@ -247,6 +249,17 @@ export function useCircleAuth() {
 
       const w = data.wallets?.[0];
       if (w) persistWallet(w);
+      if (w && loginResult.email) {
+        fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "saveUserEmail",
+            walletAddress: w.address,
+            email: loginResult.email,
+          }),
+        }).catch(() => {});
+      }
     })();
   }, [loginResult, wallet, persistWallet, logout]);
 

@@ -50,6 +50,35 @@ export async function POST(request: Request) {
 
     switch (action) {
       // 社員がスケジュールをまとめて申請（CSV相当、配列で受け取る）
+      case "saveUserEmail": {
+        const { walletAddress, email } = params;
+        if (!walletAddress || !email) {
+          return NextResponse.json({ error: "Missing walletAddress or email" }, { status: 400 });
+        }
+        const { error } = await supabase
+          .from("user_emails")
+          .upsert({ wallet_address: walletAddress.toLowerCase(), email: email.toLowerCase() });
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        return NextResponse.json({ success: true }, { status: 200 });
+      }
+
+      case "resolveEmail": {
+        const { email } = params;
+        if (!email) {
+          return NextResponse.json({ error: "Missing email" }, { status: 400 });
+        }
+        const { data } = await supabase
+          .from("user_emails")
+          .select("wallet_address")
+          .eq("email", email.toLowerCase())
+          .maybeSingle();
+        if (!data) {
+          return NextResponse.json({ error: "This email is not registered on SnapRoll" }, { status: 404 });
+        }
+        return NextResponse.json({ walletAddress: data.wallet_address }, { status: 200 });
+      }
       case "submit": {
         const { schedulerAddress, entries } = params;
         // entries: [{ recipient, amount, executeAfter }, ...]
