@@ -767,15 +767,22 @@ export default function SettingPage() {
                         i < whitelistList.length - 1 ? "1px solid #F1F3F8" : "none",
                     }}
                   >
-                    {whitelistLabels[addr.toLowerCase()] ? (
+                    {whitelistEmails[addr.toLowerCase()] ? (
+                      <>
+                        <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
+                          {whitelistLabels[addr.toLowerCase()]
+                            ? `${whitelistLabels[addr.toLowerCase()]} / ${whitelistEmails[addr.toLowerCase()]}`
+                            : whitelistEmails[addr.toLowerCase()]}
+                        </div>
+                        <div>{addr}</div>
+                      </>
+                    ) : whitelistLabels[addr.toLowerCase()] ? (
                       <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
                         {whitelistLabels[addr.toLowerCase()]}
                       </div>
-                    ) : whitelistEmails[addr.toLowerCase()] ? (
-                      <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
-                        {whitelistEmails[addr.toLowerCase()]}
-                      </div>
-                    ) : null}
+                    ) : (
+                      addr
+                    )}
                   </div>
                 ))
               )}
