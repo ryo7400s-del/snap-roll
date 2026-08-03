@@ -231,6 +231,25 @@ export default function SettingPage() {
 
     setWhitelistStatus("Registering...");
 
+    const resolvedAccounts: string[] = [];
+    for (const e of entries) {
+      if (e.address.startsWith("0x")) {
+        resolvedAccounts.push(e.address);
+        continue;
+      }
+      const resolveRes = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resolveEmail", email: e.address }),
+      });
+      const resolveData = await resolveRes.json();
+      if (!resolveData.walletAddress) {
+        setWhitelistStatus(`"${e.address}" is not registered on SnapRoll`);
+        return;
+      }
+      resolvedAccounts.push(resolveData.walletAddress);
+    }
+
     const res = await fetch("/api/circle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -239,7 +258,7 @@ export default function SettingPage() {
         userToken: loginResult.userToken,
         walletId: wallet.id,
         schedulerAddress,
-        accounts: entries.map((e) => e.address),
+        accounts: resolvedAccounts,
       }),
     });
     const data = await res.json();
@@ -270,7 +289,7 @@ export default function SettingPage() {
         body: JSON.stringify({
           action: "saveWhitelistLabels",
           schedulerAddress,
-          entries: entries.map((e) => ({ address: e.address, label: e.name })),
+          entries: entries.map((e, i) => ({ address: resolvedAccounts[i], label: e.name })),
         }),
       });
       setCsvEntries([]);
