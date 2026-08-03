@@ -61,6 +61,7 @@ export default function SettingPage() {
   const [whitelistStatus, setWhitelistStatus] = useState<string | null>(null);
   const [whitelistList, setWhitelistList] = useState<string[]>([]);
   const [whitelistLabels, setWhitelistLabels] = useState<Record<string, string>>({});
+  const [whitelistEmails, setWhitelistEmails] = useState<Record<string, string>>({});
   const [whitelistListOpen, setWhitelistListOpen] = useState(false);
   const [whitelistListLoading, setWhitelistListLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -205,6 +206,14 @@ export default function SettingPage() {
     });
     const labelData = await labelRes.json();
     setWhitelistLabels(labelData.labels || {});
+
+    const emailRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "getEmailsForAddresses", addresses: data.whitelist || [] }),
+    });
+    const emailData = await emailRes.json();
+    setWhitelistEmails(emailData.emails || {});
 
     setWhitelistListLoading(false);
   };
@@ -758,12 +767,15 @@ export default function SettingPage() {
                         i < whitelistList.length - 1 ? "1px solid #F1F3F8" : "none",
                     }}
                   >
-                    {whitelistLabels[addr.toLowerCase()] && (
+                    {whitelistLabels[addr.toLowerCase()] ? (
                       <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
                         {whitelistLabels[addr.toLowerCase()]}
                       </div>
-                    )}
-                    {addr}
+                    ) : whitelistEmails[addr.toLowerCase()] ? (
+                      <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
+                        {whitelistEmails[addr.toLowerCase()]}
+                      </div>
+                    ) : null}
                   </div>
                 ))
               )}

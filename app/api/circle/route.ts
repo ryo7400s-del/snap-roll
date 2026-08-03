@@ -179,7 +179,26 @@ export async function POST(request: Request) {
         }
       }
 
+      case "getEmailsForAddresses": {
+        try {
+          const { addresses } = params;
+          const lowerAddresses = (addresses || []).map((a: string) => a.toLowerCase());
+          const { data } = await supabase
+            .from("user_emails")
+            .select("wallet_address, email")
+            .in("wallet_address", lowerAddresses);
+          const emails: Record<string, string> = {};
+          for (const row of data || []) {
+            emails[row.wallet_address.toLowerCase()] = row.email;
+          }
+          return NextResponse.json({ emails }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
       case "saveWhitelistLabels": {
+
         try {
           const { schedulerAddress, entries } = params;
           const rows = (entries || [])
