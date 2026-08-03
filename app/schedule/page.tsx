@@ -126,6 +126,20 @@ export default function SchedulePage() {
 
         setCsvEntries(rows);
 
+
+        const resolvedRows = await Promise.all(
+          rows.map(async (r) => {
+            if (r.address.startsWith("0x")) return r;
+            const resolveRes = await fetch("/api/schedule", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "resolveEmail", email: r.address }),
+            });
+            const resolveData = await resolveRes.json();
+            return { ...r, address: resolveData.walletAddress || r.address };
+          })
+        );
+        setCsvEntries(resolvedRows);
         if (!schedulerAddress) return;
         const wlRes = await fetch("/api/circle", {
           method: "POST",
@@ -137,7 +151,7 @@ export default function SchedulePage() {
           (wlData.whitelist || []).map((a: string) => a.toLowerCase())
         );
 
-        const withStatus = rows.map((r) => ({
+        const withStatus = resolvedRows.map((r) => ({
           ...r,
           whitelisted: whitelistSet.has(r.address.toLowerCase()),
         }));
