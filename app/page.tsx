@@ -137,7 +137,7 @@ export default function Home() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: "1fr 1fr 1fr",
               gap: 12,
               marginBottom: 30,
             }}
@@ -213,6 +213,45 @@ export default function Home() {
               </span>
               <span style={{ fontSize: 9, color: "#9AA3B2" }}>
                 {truncatedAddress || "..."}
+              </span>
+            </button>
+            <button
+              onClick={() => window.open("https://faucet.circle.com/", "_blank")}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                padding: "16px 0",
+                background: "#EAF0FF",
+                border: "none",
+                borderRadius: 18,
+                cursor: "pointer",
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  background: "#2E5CFF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5}>
+                  <path d="M12 2v6" />
+                  <path d="M5 10a7 7 0 0 0 14 0" />
+                  <path d="M8 22h8" />
+                  <path d="M12 18v4" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#2E5CFF" }}>
+                Faucet
+              </span>
+              <span style={{ fontSize: 9, color: "#9AA3B2" }}>
+                Get testnet USDC
               </span>
             </button>
           </div>
