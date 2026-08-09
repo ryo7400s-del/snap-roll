@@ -71,6 +71,9 @@ export default function SchedulePage() {
   });
   const [manualList, setManualList] = useState<ScheduleEntry[]>([]);
   const [csvEntries, setCsvEntries] = useState<ScheduleEntry[]>([]);
+  const [addressBook, setAddressBook] = useState<
+    { address: string; display: string }[]
+  >([]);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +95,42 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (schedulerAddress) fetchPending();
+  }, [schedulerAddress]);
+
+  useEffect(() => {
+    (async () => {
+      if (!schedulerAddress) return;
+      const wlRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getWhitelist", schedulerAddress }),
+      });
+      const wlData = await wlRes.json();
+      const addresses: string[] = wlData.whitelist || [];
+
+      const labelRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getWhitelistLabels", schedulerAddress }),
+      });
+      const labelData = await labelRes.json();
+
+      const emailRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getEmailsForAddresses", addresses }),
+      });
+      const emailData = await emailRes.json();
+
+      const book = addresses.map((addr) => {
+        const lower = addr.toLowerCase();
+        const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+        const name = labelData.labels?.[lower] || emailData.emails?.[lower];
+        const display = name ? `${name} (${short})` : short;
+        return { address: addr, display };
+      });
+      setAddressBook(book);
+    })();
   }, [schedulerAddress]);
 
   const handleAddManual = () => {
@@ -320,6 +359,31 @@ export default function SchedulePage() {
                 placeholder="Recipient address or SnapRoll email"
                 style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 8, background: "#F7F9FC", boxSizing: "border-box" }}
               />
+              {addressBook.length > 0 && (
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8, paddingBottom: 2 }}>
+                  {addressBook.map((ab) => (
+                    <button
+                      key={ab.address}
+                      type="button"
+                      onClick={() => setManualEntry({ ...manualEntry, address: ab.address })}
+                      style={{
+                        flexShrink: 0,
+                        background: "#EAF0FF",
+                        border: "none",
+                        borderRadius: 20,
+                        padding: "6px 12px",
+                        color: "#2E5CFF",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {ab.display}
+                    </button>
+                  ))}
+                </div>
+              )}
               <input
                 value={manualEntry.amount}
                 onChange={(e) => setManualEntry({ ...manualEntry, amount: e.target.value })}
