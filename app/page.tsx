@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useCircleAuth } from "./components/useCircleAuth";
+import SnapRollLanding from "./components/SnapRollLanding";
 
 type TokenBalance = {
   amount: string;
@@ -93,27 +94,7 @@ export default function Home() {
         </div>
       </div>
       {restoring ? null : !loginResult ? (
-        <div style={{ textAlign: "center", marginTop: 60 }}>
-          <p style={{ fontSize: 13, color: "#6B7688", marginBottom: 16 }}>
-            Sign in to view your payroll wallet
-          </p>
-          <button
-            onClick={login}
-            disabled={!deviceId}
-            style={{
-              background: "#2E5CFF",
-              border: "none",
-              borderRadius: 12,
-              padding: "12px 24px",
-              color: "#fff",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Sign in with Google
-          </button>
-        </div>
+        <SnapRollLanding onSignIn={login} signInDisabled={!deviceId} />
       ) : (
         <>
           {/* Balance */}
