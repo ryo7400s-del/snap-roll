@@ -124,7 +124,7 @@ export default function Home() {
             }}
           >
             <button
-              disabled
+              onClick={() => (window.location.href = "/send")}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -134,8 +134,8 @@ export default function Home() {
                 background: "#EAF0FF",
                 border: "none",
                 borderRadius: 18,
-                cursor: "not-allowed",
-                opacity: 0.6,
+                cursor: "pointer",
+                
               }}
             >
               <div
@@ -155,7 +155,7 @@ export default function Home() {
                 </svg>
               </div>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#2E5CFF" }}>Send</span>
-              <span style={{ fontSize: 9, color: "#9AA3B2" }}>Coming soon</span>
+              <span style={{ fontSize: 9, color: "#9AA3B2" }}>Instant</span>
             </button>
 
             <button

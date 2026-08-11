@@ -10,6 +10,7 @@ const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
 const FACTORY_ADDRESS = "0x48c2A4571C8a7A2074AD153C08488734f3A3411E";
 const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
+const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 
 export async function POST(request: Request) {
   try {
@@ -548,6 +549,91 @@ export async function POST(request: Request) {
         const data = await res.json();
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
+      }
+
+      case "checkInstantSendLimit": {
+        try {
+          const { walletAddress, amount } = params;
+          const { data: limits } = await supabase
+            .from("instant_send_limits")
+            .select("*")
+            .eq("wallet_address", walletAddress.toLowerCase())
+            .maybeSingle();
+          const perTxLimit = limits?.per_tx_limit ?? 500;
+          const dailyLimit = limits?.daily_limit ?? 2000;
+
+          if (Number(amount) > perTxLimit) {
+            return NextResponse.json(
+              { allowed: false, reason: `Exceeds per-transaction limit of $${perTxLimit}` },
+              { status: 200 }
+            );
+          }
+
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const { data: history } = await supabase
+            .from("instant_send_history")
+            .select("amount")
+            .eq("wallet_address", walletAddress.toLowerCase())
+            .gte("created_at", since);
+
+          const spentToday = (history || []).reduce((sum, r) => sum + Number(r.amount), 0);
+          if (spentToday + Number(amount) > dailyLimit) {
+            return NextResponse.json(
+              {
+                allowed: false,
+                reason: `Exceeds daily limit of $${dailyLimit} (already sent $${spentToday} today)`,
+              },
+              { status: 200 }
+            );
+          }
+
+          return NextResponse.json({ allowed: true }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+      case "instantSend": {
+        const { userToken, walletId, recipient, amount } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/transfer`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              tokenId: USDC_ADDRESS,
+              destinationAddress: recipient,
+              amounts: [amount],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
+      case "recordInstantSend": {
+        try {
+          const { walletAddress, recipient, amount, txHash } = params;
+          await supabase.from("instant_send_history").insert({
+            wallet_address: walletAddress.toLowerCase(),
+            recipient,
+            amount,
+            tx_hash: txHash || null,
+          });
+          return NextResponse.json({ success: true }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
       }
 
       default:
