@@ -72,7 +72,7 @@ export default function SchedulePage() {
   const [manualList, setManualList] = useState<ScheduleEntry[]>([]);
   const [csvEntries, setCsvEntries] = useState<ScheduleEntry[]>([]);
   const [addressBook, setAddressBook] = useState<
-    { address: string; display: string }[]
+    { address: string; display: string; name: string }[]
   >([]);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,7 +127,7 @@ export default function SchedulePage() {
         const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
         const name = labelData.labels?.[lower] || emailData.emails?.[lower];
         const display = name ? `${name} (${short})` : short;
-        return { address: addr, display };
+        return { address: addr, display, name: name || "" };
       });
       setAddressBook(book);
     })();
@@ -365,7 +365,7 @@ export default function SchedulePage() {
                     <button
                       key={ab.address}
                       type="button"
-                      onClick={() => setManualEntry({ ...manualEntry, address: ab.address })}
+                      onClick={() => setManualEntry({ ...manualEntry, address: ab.address, label: ab.name || manualEntry.label })}
                       style={{
                         flexShrink: 0,
                         background: "#EAF0FF",
