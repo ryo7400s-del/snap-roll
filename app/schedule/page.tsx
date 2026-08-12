@@ -125,9 +125,12 @@ export default function SchedulePage() {
       const book = addresses.map((addr) => {
         const lower = addr.toLowerCase();
         const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-        const name = labelData.labels?.[lower] || emailData.emails?.[lower];
+        const label = labelData.labels?.[lower];
+        const email = emailData.emails?.[lower];
+        const name = label || email;
+        const combinedLabel = label && email ? `${label} / ${email}` : label || email || "";
         const display = name ? `${name} (${short})` : short;
-        return { address: addr, display, name: name || "" };
+        return { address: addr, display, name: combinedLabel };
       });
       setAddressBook(book);
     })();
