@@ -68,7 +68,6 @@ export default function SendPage() {
 
     setStatus("Sending...");
 
-    const amountUnits = Math.round(Number(amount) * 1_000_000).toString();
 
     const sendRes = await fetch("/api/circle", {
       method: "POST",
@@ -78,7 +77,7 @@ export default function SendPage() {
         userToken: loginResult.userToken,
         walletId: wallet.id,
         recipient: finalRecipient,
-        amount: amountUnits,
+        amount,
       }),
     });
     const sendData = await sendRes.json();
