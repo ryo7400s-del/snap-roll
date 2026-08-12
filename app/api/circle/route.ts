@@ -595,29 +595,60 @@ export async function POST(request: Request) {
       }
 
       case "instantSend": {
-        const { userToken, walletId, recipient, amount } = params;
-        const res = await fetch(
-          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/transfer`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${CIRCLE_API_KEY}`,
-              "X-User-Token": userToken,
-            },
-            body: JSON.stringify({
-              idempotencyKey: crypto.randomUUID(),
-              walletId,
-              tokenId: USDC_ADDRESS,
-              destinationAddress: recipient,
-              amounts: [amount],
-              feeLevel: "MEDIUM",
-            }),
+        try {
+          const { userToken, walletId, recipient, amount } = params;
+
+          const balanceRes = await fetch(
+            `${CIRCLE_BASE_URL}/v1/w3s/wallets/${walletId}/balances`,
+            {
+              method: "GET",
+              headers: {
+                accept: "application/json",
+                "content-type": "application/json",
+                Authorization: `Bearer ${CIRCLE_API_KEY}`,
+                "X-User-Token": userToken,
+              },
+            }
+          );
+          const balanceData = await balanceRes.json();
+          const usdcToken = (balanceData.data?.tokenBalances || []).find(
+            (t: any) =>
+              t.token?.tokenAddress?.toLowerCase() === USDC_ADDRESS.toLowerCase()
+          );
+
+          if (!usdcToken) {
+            return NextResponse.json(
+              { error: "USDC token not found in this wallet" },
+              { status: 404 }
+            );
           }
-        );
-        const data = await res.json();
-        if (!res.ok) return NextResponse.json(data, { status: res.status });
-        return NextResponse.json(data.data, { status: 200 });
+
+          const res = await fetch(
+            `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/transfer`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${CIRCLE_API_KEY}`,
+                "X-User-Token": userToken,
+              },
+              body: JSON.stringify({
+                idempotencyKey: crypto.randomUUID(),
+                walletId,
+                tokenId: usdcToken.token.id,
+                destinationAddress: recipient,
+                amounts: [amount],
+                feeLevel: "MEDIUM",
+              }),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok) return NextResponse.json(data, { status: res.status });
+          return NextResponse.json(data.data, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
       }
 
       case "recordInstantSend": {
