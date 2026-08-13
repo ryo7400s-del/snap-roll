@@ -362,6 +362,11 @@ export default function ApprovePage() {
         return;
       }
 
+      if (result?.status && result.status !== "COMPLETE") {
+        setStatus("Batch approval did not complete on-chain (status: " + result.status + "). Please try again.");
+        return;
+      }
+
       for (const item of items) {
         await fetch("/api/schedule", {
           method: "POST",
