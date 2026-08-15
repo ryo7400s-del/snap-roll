@@ -14,6 +14,7 @@ type PendingSchedule = {
   label?: string;
   currency?: string;
   interval_seconds?: number | null;
+  slippage_bps?: number | null;
 };
 
 function formatUsdc(amount: string) {
@@ -183,6 +184,12 @@ export default function ApprovePage() {
         amount: item.amount,
         executeAfter: item.execute_after,
         requestId,
+        // Previously omitted: without these, every schedule was created
+        // on-chain as one-time regardless of what the user selected,
+        // even though interval_seconds was correctly stored in the DB.
+        intervalSeconds: item.interval_seconds || 0,
+        useEURC: item.currency === "EURC",
+        slippageBps: item.slippage_bps ?? 100,
       }),
     });
     const data = await res.json();

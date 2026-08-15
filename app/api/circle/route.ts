@@ -531,7 +531,49 @@ export async function POST(request: Request) {
       }
 
             case "approveSchedule": {
-        const { userToken, walletId, schedulerAddress, recipient, amount, executeAfter, requestId } = params;
+        const {
+          userToken,
+          walletId,
+          schedulerAddress,
+          recipient,
+          amount,
+          executeAfter,
+          requestId,
+          intervalSeconds,
+          useEURC,
+          slippageBps,
+        } = params;
+
+        // Route to the correct on-chain function based on whether this is a
+        // recurring schedule and/or an EURC auto-swap schedule. Previously
+        // this always called the one-time createScheduleFor, which silently
+        // dropped interval_seconds even for schedules marked as recurring in
+        // the DB - the on-chain schedule was created as one-time regardless.
+        const isRecurring = !!intervalSeconds && intervalSeconds > 0;
+
+        let abiFunctionSignature: string;
+        let abiParameters: unknown[];
+
+        if (useEURC) {
+          abiFunctionSignature =
+            "createRecurringScheduleWithEURC(address,uint256,uint64,uint64,bool,uint16,bytes32)";
+          abiParameters = [
+            recipient,
+            amount,
+            executeAfter,
+            intervalSeconds || 0,
+            true,
+            slippageBps ?? 100,
+            requestId,
+          ];
+        } else if (isRecurring) {
+          abiFunctionSignature = "createRecurringScheduleFor(address,uint256,uint64,uint64,bytes32)";
+          abiParameters = [recipient, amount, executeAfter, intervalSeconds, requestId];
+        } else {
+          abiFunctionSignature = "createScheduleFor(address,uint256,uint64,bytes32)";
+          abiParameters = [recipient, amount, executeAfter, requestId];
+        }
+
         const res = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
           {
@@ -545,8 +587,8 @@ export async function POST(request: Request) {
               idempotencyKey: crypto.randomUUID(),
               walletId,
               contractAddress: schedulerAddress,
-              abiFunctionSignature: "createScheduleFor(address,uint256,uint64,bytes32)",
-              abiParameters: [recipient, amount, executeAfter, requestId],
+              abiFunctionSignature,
+              abiParameters,
               feeLevel: "MEDIUM",
             }),
           }
