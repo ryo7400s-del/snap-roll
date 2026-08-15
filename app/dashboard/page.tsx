@@ -35,12 +35,16 @@ const STATUS_COLORS: Record<string, string> = {
 
 // A recurring schedule stays status="approved" even after it has already
 // executed at least once (the contract advances executeAfter in place
-// rather than marking it done). Without this, such a schedule would show
-// as blue ("approved"/awaiting) on the calendar and in list rows forever,
-// even though it has an on-chain tx_hash proving it already ran.
-// Treat "approved" + has a tx_hash the same as "executed" for display.
-function displayStatus(s: { status: string; tx_hash?: string | null }): string {
-  if (s.status === "approved" && s.tx_hash) return "executed";
+// rather than marking it done). We can't just treat "approved + has a
+// tx_hash" as permanently "executed": that tx_hash is from whichever
+// past cycle last ran, but execute_after has since been advanced to the
+// *next* upcoming cycle, which has no confirmed tx yet. So the same row
+// needs to display as executed for its past run date and as
+// approved/pending for its current (future) execute_after date.
+// Comparing execute_after against "now" tells us which case we're in.
+function displayStatus(s: { status: string; tx_hash?: string | null; execute_after: number }): string {
+  const now = Math.floor(Date.now() / 1000);
+  if (s.status === "approved" && s.tx_hash && s.execute_after <= now) return "executed";
   return s.status;
 }
 
