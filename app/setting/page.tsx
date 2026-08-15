@@ -149,6 +149,43 @@ export default function SettingPage() {
         setDeployStatus("Deploy failed: " + JSON.stringify(error));
         return;
       }
+
+      setDeployStatus("Confirming on-chain status...");
+
+      // Circle SDK's callback only confirms the user completed the signing
+      // challenge; it does NOT confirm the transaction succeeded on-chain.
+      // We must separately poll Circle's transaction status to check for
+      // an on-chain revert (e.g. DeployFailed) before trusting the
+      // precomputed address.
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+
+      if (statusData.state === "FAILED") {
+        setDeploying(false);
+        setDeployStatus(
+          `Deploy failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setDeploying(false);
+        setDeployStatus(
+          `Deploy status unclear: ${statusData.state || "unknown"}. Please check ArcScan manually before proceeding.`
+        );
+        return;
+      }
+
       setDeployStatus("Deploy successful. Confirming address...");
       persistScheduler(checkData.predicted);
       setDeployStatus("Registering contract...");

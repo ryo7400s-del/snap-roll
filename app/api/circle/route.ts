@@ -349,6 +349,31 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      case "checkTransactionStatus": {
+        const { userToken, walletId } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/transactions?walletIds=${walletId}&pageSize=1`,
+          {
+            headers: {
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        const latestTx = data.data?.transactions?.[0];
+        return NextResponse.json(
+          {
+            state: latestTx?.state,
+            errorReason: latestTx?.errorReason,
+            errorDetails: latestTx?.errorDetails,
+            txId: latestTx?.id,
+          },
+          { status: 200 }
+        );
+      }
+
       case "whitelistBatch": {
         const { userToken, walletId, schedulerAddress, accounts } = params;
         const res = await fetch(
