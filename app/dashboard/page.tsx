@@ -33,6 +33,17 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: "#E5484D",
 };
 
+// A recurring schedule stays status="approved" even after it has already
+// executed at least once (the contract advances executeAfter in place
+// rather than marking it done). Without this, such a schedule would show
+// as blue ("approved"/awaiting) on the calendar and in list rows forever,
+// even though it has an on-chain tx_hash proving it already ran.
+// Treat "approved" + has a tx_hash the same as "executed" for display.
+function displayStatus(s: { status: string; tx_hash?: string | null }): string {
+  if (s.status === "approved" && s.tx_hash) return "executed";
+  return s.status;
+}
+
 export default function DashboardPage() {
   const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
 
@@ -328,7 +339,7 @@ export default function DashboardPage() {
                             width: 4,
                             height: 4,
                             borderRadius: "50%",
-                            background: STATUS_COLORS[s.status] || "#9AA3B2",
+                            background: STATUS_COLORS[displayStatus(s)] || "#9AA3B2",
                           }}
                         />
                       ))}
@@ -527,7 +538,7 @@ export default function DashboardPage() {
                     style={{
                       fontSize: 10,
                       fontWeight: 700,
-                      color: STATUS_COLORS[s.status] || "#9AA3B2",
+                      color: STATUS_COLORS[displayStatus(s)] || "#9AA3B2",
                       textTransform: "uppercase",
                     }}
                   >
