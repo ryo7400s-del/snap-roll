@@ -328,6 +328,38 @@ export default function SettingPage() {
         setWhitelistStatus("Registration failed: " + JSON.stringify(error));
         return;
       }
+
+      // sdk.execute's callback only confirms the signing challenge
+      // completed, not that the whitelist tx succeeded on-chain. Verify
+      // before saving labels / reporting success, otherwise a reverted
+      // whitelist tx would silently show as registered while the
+      // recipients remain unwhitelisted on-chain (RecipientNotWhitelisted
+      // would then surface much later, at schedule creation time).
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+
+      if (statusData.state === "FAILED") {
+        setWhitelistStatus(
+          `Whitelist registration failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setWhitelistStatus(`Whitelist status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
+        return;
+      }
+
       setWhitelistStatus(`Registered successfully (${entries.length} item(s))`);
       await fetch("/api/circle", {
         method: "POST",
@@ -442,12 +474,41 @@ export default function SettingPage() {
       userToken: loginResult.userToken,
       encryptionKey: loginResult.encryptionKey,
     });
-    sdk.execute(data.challengeId, (error: unknown) => {
-      setRegistryLoading(false);
+    sdk.execute(data.challengeId, async (error: unknown) => {
       if (error) {
+        setRegistryLoading(false);
         setRegistryMessage("Registration failed: " + JSON.stringify(error));
         return;
       }
+
+      // sdk.execute's callback only confirms the signing challenge
+      // completed, not that the registerScheduler tx succeeded on-chain.
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+      setRegistryLoading(false);
+
+      if (statusData.state === "FAILED") {
+        setRegistryMessage(
+          `Registration failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setRegistryMessage(`Registration status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
+        return;
+      }
+
       setRegistryMessage("Registered successfully");
       setRegistryStatus("registered");
     });

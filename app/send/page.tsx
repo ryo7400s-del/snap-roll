@@ -93,9 +93,39 @@ export default function SendPage() {
       encryptionKey: loginResult.encryptionKey,
     });
     sdk.execute(sendData.challengeId, async (error: unknown, result: any) => {
-      setSending(false);
       if (error) {
+        setSending(false);
         setStatus("Send failed: " + JSON.stringify(error));
+        return;
+      }
+
+      // sdk.execute's callback only confirms the signing challenge
+      // completed, not that the transfer succeeded on-chain. Verify
+      // before recording the send as successful, otherwise a reverted
+      // instant send would be logged as if the funds actually moved.
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+      setSending(false);
+
+      if (statusData.state === "FAILED") {
+        setStatus(
+          `Send failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setStatus(`Send status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
         return;
       }
 

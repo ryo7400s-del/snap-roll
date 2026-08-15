@@ -153,12 +153,45 @@ export default function ApprovePage() {
       });
 
       const approveOk = await new Promise<boolean>((resolve) => {
-        sdk.execute(approveData.challengeId, (error: unknown) => {
+        sdk.execute(approveData.challengeId, async (error: unknown) => {
           if (error) {
             setStatus("Approve failed: " + JSON.stringify(error));
             resolve(false);
             return;
           }
+
+          // sdk.execute's callback only confirms the signing challenge
+          // completed, not that the tx succeeded on-chain. Verify before
+          // proceeding to createScheduleFor, otherwise a reverted USDC
+          // approve would silently let the flow continue and only fail
+          // much later at actual execution time (insufficient allowance).
+          await new Promise((r) => setTimeout(r, 3000));
+
+          const statusRes = await fetch("/api/circle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "checkTransactionStatus",
+              userToken: loginResult.userToken,
+              walletId: wallet.id,
+            }),
+          });
+          const statusData = await statusRes.json();
+
+          if (statusData.state === "FAILED") {
+            setStatus(
+              `USDC approve failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+            );
+            resolve(false);
+            return;
+          }
+
+          if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+            setStatus(`USDC approve status unclear: ${statusData.state || "unknown"}. Please check ArcScan before retrying.`);
+            resolve(false);
+            return;
+          }
+
           setStatus("Approved. Creating schedule...");
           resolve(true);
         });
@@ -205,8 +238,8 @@ export default function ApprovePage() {
       encryptionKey: loginResult.encryptionKey,
     });
     sdk.execute(data.challengeId, async (error: unknown, result: any) => {
-      setProcessingId(null);
       if (error) {
+        setProcessingId(null);
         const errAny = error as any;
         if (errAny?.code === 155103 || errAny?.code === 155105) {
           setStatus("Your session has expired. Please sign in again.");
@@ -214,6 +247,37 @@ export default function ApprovePage() {
           return;
         }
         setStatus("Approval failed: " + JSON.stringify(error));
+        return;
+      }
+
+      // sdk.execute's callback only confirms the signing challenge
+      // completed, not that createScheduleFor succeeded on-chain. This is
+      // the exact bug that previously let approveSchedule mark a schedule
+      // as "approved" in the DB even when the on-chain write reverted -
+      // verify before calling markApproved.
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+      setProcessingId(null);
+
+      if (statusData.state === "FAILED") {
+        setStatus(
+          `Schedule creation failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setStatus(`Schedule creation status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
         return;
       }
 
