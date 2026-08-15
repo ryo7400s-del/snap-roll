@@ -456,7 +456,7 @@ export async function POST(request: Request) {
           const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
           const abi = [
             "function scheduleCount() view returns (uint256)",
-            "function getSchedule(uint256) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, bool active, bytes32 requestId))",
+            "function getSchedule(uint256) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, uint64 intervalSeconds, bool active, bool useEURC, uint16 slippageBps, bytes32 requestId))",
           ];
           const contract = new ethers.Contract(schedulerAddress, abi, provider);
           const count = await contract.scheduleCount();

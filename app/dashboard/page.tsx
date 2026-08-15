@@ -107,8 +107,43 @@ export default function DashboardPage() {
         encryptionKey: loginResult.encryptionKey,
       });
       sdk.execute(toggleData.challengeId, async (error: unknown) => {
+        if (error) {
+          setPausingId(null);
+          return;
+        }
+
+        // sdk.execute's callback only confirms the signing challenge
+        // completed - it does not confirm the tx succeeded on-chain.
+        // Verify actual on-chain status before marking as paused in the
+        // DB, otherwise a reverted toggleSchedule could silently leave
+        // the UI showing "paused" while the schedule is still active
+        // on-chain and continues to execute.
+        await new Promise((r) => setTimeout(r, 3000));
+
+        const statusRes = await fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "checkTransactionStatus",
+            userToken: loginResult.userToken,
+            walletId: wallet.id,
+          }),
+        });
+        const statusData = await statusRes.json();
         setPausingId(null);
-        if (error) return;
+
+        if (statusData.state === "FAILED") {
+          alert(
+            `Pause failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+          );
+          return;
+        }
+
+        if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+          alert(`Pause status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
+          return;
+        }
+
         await fetch("/api/schedule", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
