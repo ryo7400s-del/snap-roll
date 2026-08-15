@@ -171,8 +171,14 @@ export default function DashboardPage() {
     }
   };
 
+  // "stale" rows are old/invalidated data left over from a contract
+  // migration - they should never appear on the calendar. Without this
+  // filter, a day with many stale rows could push real
+  // pending/approved/executed/rejected markers out of the
+  // dayItems.slice(0, 3) display limit below.
   const schedulesByDate = new Map<string, ScheduleRow[]>();
   for (const s of schedules) {
+    if (s.status === "stale") continue;
     const key = dateKey(s.execute_after);
     if (!schedulesByDate.has(key)) schedulesByDate.set(key, []);
     schedulesByDate.get(key)!.push(s);
