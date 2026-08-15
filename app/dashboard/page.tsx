@@ -16,6 +16,17 @@ type ScheduleRow = {
   interval_seconds?: number | null;
 };
 
+type ExecutionRow = {
+  id: string;
+  schedule_id: string;
+  scheduler_address: string;
+  recipient: string;
+  amount: string;
+  execute_after: number;
+  tx_hash: string;
+  currency?: string | null;
+};
+
 function formatUsdc(amount: string) {
   const n = Number(amount) / 1_000_000;
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
@@ -53,6 +64,7 @@ export default function DashboardPage() {
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [executions, setExecutions] = useState<ExecutionRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
@@ -76,6 +88,20 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       setSchedules(data.schedules || []);
+
+      // Past execution history lives separately in schedule_executions,
+      // since pending_schedules.execute_after only reflects the next
+      // upcoming cycle for a recurring schedule and loses the previous
+      // date once advanced. Fetch it here so the calendar can show past
+      // executed dates that are no longer present in `schedules`.
+      const execRes = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "listExecutions", schedulerAddress }),
+      });
+      const execData = await execRes.json();
+      setExecutions(execData.executions || []);
+
       setLoading(false);
     })();
   }, [schedulerAddress]);
@@ -186,6 +212,25 @@ export default function DashboardPage() {
     const key = dateKey(s.execute_after);
     if (!schedulesByDate.has(key)) schedulesByDate.set(key, []);
     schedulesByDate.get(key)!.push(s);
+  }
+
+  // Merge in past execution history so dates that pending_schedules has
+  // already "moved on" from (execute_after advanced to the next cycle)
+  // still show their actual past executed date on the calendar as green.
+  // Each execution log entry is rendered as a synthetic executed row.
+  for (const e of executions) {
+    const key = dateKey(e.execute_after);
+    if (!schedulesByDate.has(key)) schedulesByDate.set(key, []);
+    schedulesByDate.get(key)!.push({
+      id: `exec-${e.id}`,
+      scheduler_address: e.scheduler_address,
+      recipient: e.recipient,
+      amount: e.amount,
+      execute_after: e.execute_after,
+      status: "executed",
+      currency: e.currency ?? undefined,
+      tx_hash: e.tx_hash,
+    });
   }
 
   const firstDayOfMonth = new Date(viewMonth.year, viewMonth.month, 1);
