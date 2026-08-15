@@ -15,10 +15,19 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
+// Matches the current on-chain Schedule struct (PaymentSchedulerV2.sol):
+//   address recipient;
+//   uint256 amount;
+//   uint64  executeAfter;
+//   uint64  intervalSeconds;
+//   bool    active;
+//   bool    useEURC;
+//   uint16  slippageBps;
+//   bytes32 requestId;
 const SCHEDULER_ABI = [
   "function executeSchedule(uint256 scheduleId) external",
   "function scheduleCount() view returns (uint256)",
-  "function getSchedule(uint256 scheduleId) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, bool active, bytes32 requestId))",
+  "function getSchedule(uint256 scheduleId) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, uint64 intervalSeconds, bool active, bool useEURC, uint16 slippageBps, bytes32 requestId))",
 ];
 
 function sleep(ms) {
@@ -34,7 +43,7 @@ async function findScheduleIdByRequestId(schedulerAddress, requestIdHex) {
     const s = await contract.getSchedule(i);
     await sleep(500);
     if (s.requestId.toLowerCase() === requestIdHex.toLowerCase()) {
-      return Number(i);
+      return { scheduleId: Number(i), schedule: s };
     }
   }
   return null;
@@ -56,12 +65,13 @@ async function main() {
 
   console.log(`Found ${dueSchedules.length} schedule(s) due for execution`);
 
-
-  // 既知の旧Factory由来のコントラクト（executeScheduleを持たない旧バージョン）は
-  // 処理せずスキップする。新しいFactoryを再デプロイした際はここに追記する。
+  // Known contracts from old Factory versions that don't have a compatible
+  // executeSchedule/getSchedule ABI. Append here if an old deployment is
+  // still referenced by leftover DB rows.
   const KNOWN_INVALID_CONTRACTS = new Set([
     "0x2478db80727ef7ad46337bd53c17c7b6fca16a4b",
   ]);
+
   for (const row of dueSchedules) {
     const requestId = "0x" + row.id.replace(/-/g, "").padStart(64, "0");
 
@@ -73,12 +83,14 @@ async function main() {
     }
 
     try {
-      const scheduleId = await findScheduleIdByRequestId(row.scheduler_address, requestId);
+      const found = await findScheduleIdByRequestId(row.scheduler_address, requestId);
 
-      if (scheduleId === null) {
+      if (found === null) {
         console.log(`  Could not find on-chain scheduleId for requestId ${requestId}, skipping`);
         continue;
       }
+
+      const { scheduleId } = found;
 
       const contract = new ethers.Contract(row.scheduler_address, SCHEDULER_ABI, wallet);
       const tx = await contract.executeSchedule(scheduleId);
@@ -86,33 +98,43 @@ async function main() {
       await tx.wait();
       console.log(`  Success: ${tx.hash}`);
 
-      const updates = { status: "executed", tx_hash: tx.hash };
-      const { error: updateError } = await supabase
-        .from("pending_schedules")
-        .update(updates)
-        .eq("id", row.id);
+      // Re-read the schedule after execution to get the contract's own
+      // updated executeAfter/active state, rather than recomputing it
+      // ourselves or duplicating the row in the DB. The contract is the
+      // single source of truth for recurring schedules: it advances
+      // executeAfter internally and keeps the same scheduleId/requestId
+      // active for reuse on the next cycle.
+      const after = await contract.getSchedule(scheduleId);
 
-      if (updateError) {
-        console.error(`  Failed to update status: ${updateError.message}`);
-      }
+      if (after.active) {
+        // Recurring schedule: stays "approved" so the next due-date check
+        // picks it back up automatically under the same DB row. We only
+        // sync execute_after here - if we don't, this row would look
+        // "due" again immediately and every subsequent run would just
+        // hit TooEarly on-chain until the real time catches up.
+        const nextExecuteAfter = Number(after.executeAfter);
+        const { error: updateError } = await supabase
+          .from("pending_schedules")
+          .update({
+            execute_after: nextExecuteAfter,
+            tx_hash: tx.hash,
+          })
+          .eq("id", row.id);
 
-      if (row.interval_seconds) {
-        const nextExecuteAfter = row.execute_after + row.interval_seconds;
-        const { error: insertError } = await supabase.from("pending_schedules").insert({
-          scheduler_address: row.scheduler_address,
-          recipient: row.recipient,
-          amount: row.amount,
-          execute_after: nextExecuteAfter,
-          status: "approved",
-          interval_seconds: row.interval_seconds,
-          currency: row.currency,
-          label: row.label,
-        });
-
-        if (insertError) {
-          console.error(`  Failed to create next occurrence: ${insertError.message}`);
+        if (updateError) {
+          console.error(`  Failed to sync next execute_after: ${updateError.message}`);
         } else {
-          console.log(`  Next occurrence scheduled for ${new Date(nextExecuteAfter * 1000).toISOString()}`);
+          console.log(`  Recurring schedule advanced on-chain; next run at ${new Date(nextExecuteAfter * 1000).toISOString()}`);
+        }
+      } else {
+        // One-time schedule: mark as executed, nothing further to do.
+        const { error: updateError } = await supabase
+          .from("pending_schedules")
+          .update({ status: "executed", tx_hash: tx.hash })
+          .eq("id", row.id);
+
+        if (updateError) {
+          console.error(`  Failed to update status: ${updateError.message}`);
         }
       }
     } catch (err) {
