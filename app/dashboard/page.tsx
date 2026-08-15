@@ -12,6 +12,8 @@ type ScheduleRow = {
   status: string;
   label?: string;
   currency?: string;
+  tx_hash?: string | null;
+  interval_seconds?: number | null;
 };
 
 function formatUsdc(amount: string) {
@@ -180,11 +182,18 @@ export default function DashboardPage() {
 
   const selectedSchedules = selectedDate ? schedulesByDate.get(selectedDate) || [] : [];
 
-  // approved（承認済み）だがまだexecuted/rejectedになっていないもの＝
-  // 実行待ちのスケジュール。GitHub Actionsの次回実行を待っている状態。
+  // approved（承認済み）のスケジュールは2種類ある:
+  //   - tx_hashがまだない: 一度もオンチェーン実行されていない、本当の実行待ち
+  //   - tx_hashがある: 繰り返しスケジュールとして既に1回以上実行済みで、
+  //                    コントラクト側がexecuteAfterを繰り上げて次回に備えている状態
+  // 以前はこの2つを区別せず"approved"を一律「未承認」のように表示しており、
+  // 実際には1回目の送金が完了している繰り返しスケジュールも
+  // 承認待ちのままに見えてしまっていた。
   const now = Math.floor(Date.now() / 1000);
-  const awaitingExecution = schedules.filter((s) => s.status === "approved");
+  const awaitingExecution = schedules.filter((s) => s.status === "approved" && !s.tx_hash);
+  const activeRecurring = schedules.filter((s) => s.status === "approved" && !!s.tx_hash);
   const [awaitingOpen, setAwaitingOpen] = useState(false);
+  const [activeOpen, setActiveOpen] = useState(false);
 
   const handleExportCsv = async () => {
     if (!schedulerAddress) return;
@@ -410,6 +419,86 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+
+          <button
+            onClick={() => setActiveOpen((v) => !v)}
+            style={{
+              width: "100%",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              background: "#EAF7EE",
+              border: "1px solid #D6F0DD",
+              borderRadius: activeOpen ? "14px 14px 0 0" : 14,
+              padding: "12px 14px",
+              marginBottom: activeOpen ? 0 : 16,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#0B1220",
+            }}
+          >
+            <span>Active recurring ({activeRecurring.length})</span>
+            <span style={{ color: "#9AA3B2", fontSize: 11 }}>{activeOpen ? "▲" : "▼"}</span>
+          </button>
+          {activeOpen && (
+            <div
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #EEF1F6",
+                borderTop: "none",
+                borderRadius: "0 0 14px 14px",
+                padding: 12,
+                marginBottom: 16,
+              }}
+            >
+              {activeRecurring.length === 0 ? (
+                <div style={{ fontSize: 11, color: "#9AA3B2" }}>No active recurring schedules</div>
+              ) : (
+                activeRecurring.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 0",
+                      borderBottom: "1px solid #F1F3F8",
+                      fontSize: 11,
+                      gap: 8,
+                    }}
+                  >
+                    <span>
+                      {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
+                    </span>
+                    <span style={{ color: "#6B7688", flex: 1, textAlign: "right", marginRight: 8 }}>
+                      ${formatUsdc(s.amount)} · Next run:{" "}
+                      {s.execute_after <= now ? "within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
+                    </span>
+                    <button
+                      onClick={() => handlePause(s)}
+                      disabled={pausingId === s.id}
+                      style={{
+                        background: "#FFF4E5",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "4px 10px",
+                        color: "#8A5A00",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: pausingId === s.id ? 0.6 : 1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {pausingId === s.id ? "Pausing..." : "Pause"}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
           {selectedDate && selectedSchedules.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginBottom: 8 }}>
