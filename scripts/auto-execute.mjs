@@ -98,6 +98,25 @@ async function main() {
       await tx.wait();
       console.log(`  Success: ${tx.hash}`);
 
+      // Record this execution permanently, independent of pending_schedules'
+      // current execute_after/status. pending_schedules only tracks the
+      // *next* upcoming cycle for a recurring schedule, so without a
+      // separate log, past execution dates become unrecoverable once
+      // execute_after is advanced. row.execute_after here is still the
+      // pre-update value: the date this cycle was actually due/executed for.
+      const { error: logError } = await supabase.from("schedule_executions").insert({
+        schedule_id: row.id,
+        scheduler_address: row.scheduler_address,
+        recipient: row.recipient,
+        amount: row.amount,
+        execute_after: row.execute_after,
+        tx_hash: tx.hash,
+        currency: row.currency,
+      });
+      if (logError) {
+        console.error(`  Failed to log execution history: ${logError.message}`);
+      }
+
       // Re-read the schedule after execution to get the contract's own
       // updated executeAfter/active state, rather than recomputing it
       // ourselves or duplicating the row in the DB. The contract is the
