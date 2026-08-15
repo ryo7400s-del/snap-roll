@@ -221,5 +221,5 @@ Any of these would remove the single-private-key dependency entirely — executi
 ### Chain
 ```
 Arc testnet RPC: https://arc-testnet.drpc.org
-Factory contract: 0x48c2A4571C8a7A2074AD153C08488734f3A3411E
+Factory contract: 0xf371d55B3Ab9f60222Eb141B060A96fb65867aB9
 ```
