@@ -5,7 +5,7 @@ import Papa from "papaparse";
 import { useCircleAuth } from "../components/useCircleAuth";
 import { usePasskey } from "../components/usePasskey";
 
-const FACTORY_ADDRESS = "0xF9B63DDa6c65f974e6720ee35e50877B8E77a4b6";
+const FACTORY_ADDRESS = "0xf371d55B3Ab9f60222Eb141B060A96fb65867aB9";
 
 // 一度デプロイしたPaymentSchedulerV2のアドレスを保持する場所。
 // 本来はユーザーごとにSchedulerRegistry等から取得すべきだが、
