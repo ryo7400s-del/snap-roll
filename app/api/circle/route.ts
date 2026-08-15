@@ -341,6 +341,12 @@ export async function POST(request: Request) {
               abiFunctionSignature: "deploy()",
               abiParameters: [],
               feeLevel: "MEDIUM",
+              // Explicit gasLimit override: deploy() uses CREATE2 to deploy the
+              // full PaymentSchedulerV2 bytecode (~15KB), which can cause Circle's
+              // automatic gas estimation to fail (ESTIMATION_ERROR) now that the
+              // contract includes the EURC/Curve swap logic. A generous fixed
+              // limit avoids relying on estimation for this specific call.
+              gasLimit: "5000000",
             }),
           }
         );
