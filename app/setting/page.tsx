@@ -1156,7 +1156,7 @@ export default function SettingPage() {
                 >
                   {registryLoading ? "Registering..." : "Register for Multi-Device Sync"}
                 </button>
-                {registryMessage?.includes("AlreadyRegistered") && (
+                {registryMessage?.includes("0x3a81d6fc") && (
                   <button
                     onClick={handleUnregisterFromRegistry}
                     disabled={registryLoading}
