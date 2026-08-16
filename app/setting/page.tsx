@@ -875,9 +875,12 @@ export default function SettingPage() {
                         <div>{addr}</div>
                       </>
                     ) : whitelistLabels[addr.toLowerCase()] ? (
-                      <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
-                        {whitelistLabels[addr.toLowerCase()]}
-                      </div>
+                      <>
+                        <div style={{ fontWeight: 700, color: "#0B1220", marginBottom: 2 }}>
+                          {whitelistLabels[addr.toLowerCase()]}
+                        </div>
+                        <div>{addr}</div>
+                      </>
                     ) : (
                       addr
                     )}
