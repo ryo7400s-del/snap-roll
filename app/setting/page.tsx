@@ -435,16 +435,20 @@ export default function SettingPage() {
 
   useEffect(() => {
     (async () => {
-      if (!wallet) return;
+      if (!wallet || !schedulerAddress) return;
       const res = await fetch("/api/circle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getRegistryStatus", ownerAddress: wallet.address }),
+        body: JSON.stringify({
+          action: "getRegistryStatus",
+          ownerAddress: wallet.address,
+          schedulerAddress,
+        }),
       });
       const data = await res.json();
       setRegistryStatus(data.isRegistered ? "registered" : "unregistered");
     })();
-  }, [wallet]);
+  }, [wallet, schedulerAddress]);
 
   const handleRegisterInRegistry = async () => {
     if (!loginResult || !wallet || !schedulerAddress || !sdk) {
