@@ -432,6 +432,36 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      // Needed before re-registering after a contract migration: the
+      // registry only allows one scheduler per owner at a time
+      // (AlreadyRegistered), so switching to a new PaymentSchedulerV2
+      // requires unregistering the old one first.
+      case "unregisterScheduler": {
+        const { userToken, walletId } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: SCHEDULER_REGISTRY_ADDRESS,
+              abiFunctionSignature: "unregister()",
+              abiParameters: [],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "getRegistryStatus": {
         try {
           const { ownerAddress, schedulerAddress } = params;

@@ -518,6 +518,73 @@ export default function SettingPage() {
     });
   };
 
+  // Needed when switching to a newly redeployed contract: the registry
+  // only allows one scheduler per owner (AlreadyRegistered), so the old
+  // registration must be cleared before the new one can be registered.
+  const handleUnregisterFromRegistry = async () => {
+    if (!loginResult || !wallet || !sdk) {
+      setRegistryMessage("Sign in first");
+      return;
+    }
+    setRegistryLoading(true);
+    setRegistryMessage("Unregistering previous contract...");
+    const res = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "unregisterScheduler",
+        userToken: loginResult.userToken,
+        walletId: wallet.id,
+      }),
+    });
+    const data = await res.json();
+    if (!data.challengeId) {
+      setRegistryMessage("Unregister failed: " + JSON.stringify(data));
+      setRegistryLoading(false);
+      return;
+    }
+    sdk.setAuthentication({
+      userToken: loginResult.userToken,
+      encryptionKey: loginResult.encryptionKey,
+    });
+    sdk.execute(data.challengeId, async (error: unknown) => {
+      if (error) {
+        setRegistryLoading(false);
+        setRegistryMessage("Unregister failed: " + JSON.stringify(error));
+        return;
+      }
+
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const statusRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkTransactionStatus",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const statusData = await statusRes.json();
+      setRegistryLoading(false);
+
+      if (statusData.state === "FAILED") {
+        setRegistryMessage(
+          `Unregister failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+        );
+        return;
+      }
+
+      if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+        setRegistryMessage(`Unregister status unclear: ${statusData.state || "unknown"}. Please check ArcScan before retrying.`);
+        return;
+      }
+
+      setRegistryMessage("Unregistered. You can now register the current contract.");
+      setRegistryStatus("unregistered");
+    });
+  };
+
   return (
     <div style={{ padding: "20px 20px 8px", minHeight: "100%" }}>
       <div style={{ fontSize: 20, fontWeight: 800, color: "#0B1220", marginBottom: 4 }}>
@@ -1071,23 +1138,44 @@ export default function SettingPage() {
             {registryStatus === "registered" ? (
               <div style={{ fontSize: 12, color: "#16A34A", fontWeight: 700 }}>✓ Registered</div>
             ) : (
-              <button
-                onClick={handleRegisterInRegistry}
-                disabled={registryLoading || !schedulerAddress}
-                style={{
-                  background: "#F1F3F8",
-                  border: "none",
-                  borderRadius: 12,
-                  padding: "12px 20px",
-                  color: "#0B1220",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  opacity: registryLoading || !schedulerAddress ? 0.6 : 1,
-                }}
-              >
-                {registryLoading ? "Registering..." : "Register for Multi-Device Sync"}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+                <button
+                  onClick={handleRegisterInRegistry}
+                  disabled={registryLoading || !schedulerAddress}
+                  style={{
+                    background: "#F1F3F8",
+                    border: "none",
+                    borderRadius: 12,
+                    padding: "12px 20px",
+                    color: "#0B1220",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    opacity: registryLoading || !schedulerAddress ? 0.6 : 1,
+                  }}
+                >
+                  {registryLoading ? "Registering..." : "Register for Multi-Device Sync"}
+                </button>
+                {registryMessage?.includes("AlreadyRegistered") && (
+                  <button
+                    onClick={handleUnregisterFromRegistry}
+                    disabled={registryLoading}
+                    style={{
+                      background: "none",
+                      border: "1px solid #E5484D",
+                      borderRadius: 12,
+                      padding: "8px 16px",
+                      color: "#E5484D",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      opacity: registryLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {registryLoading ? "Unregistering..." : "Unregister previous contract first"}
+                  </button>
+                )}
+              </div>
             )}
             {registryMessage && (
               <div style={{ fontSize: 12, color: "#6B7688", marginTop: 8 }}>{registryMessage}</div>
