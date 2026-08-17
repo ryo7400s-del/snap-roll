@@ -459,7 +459,7 @@ export default function DashboardPage() {
                       {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
                     </span>
                     <span style={{ color: "#6B7688", flex: 1, textAlign: "right", marginRight: 8 }}>
-                      ${formatUsdc(s.amount)} ·{" "}
+                      {formatUsdc(s.amount)} {s.currency || "USDC"} ·{" "}
                       {s.execute_after <= now ? "Next run: within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
                     </span>
                     <button
@@ -538,7 +538,7 @@ export default function DashboardPage() {
                       {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
                     </span>
                     <span style={{ color: "#6B7688", flex: 1, textAlign: "right", marginRight: 8 }}>
-                      ${formatUsdc(s.amount)} · Next run:{" "}
+                      {formatUsdc(s.amount)} {s.currency || "USDC"} · Next run:{" "}
                       {s.execute_after <= now ? "within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
                     </span>
                     <button
@@ -586,7 +586,7 @@ export default function DashboardPage() {
                       {s.label || `${s.recipient.slice(0, 6)}...${s.recipient.slice(-4)}`}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220" }}>
-                      ${formatUsdc(s.amount)}
+                      {formatUsdc(s.amount)} {s.currency || "USDC"}
                     </div>
                   </div>
                   <div
