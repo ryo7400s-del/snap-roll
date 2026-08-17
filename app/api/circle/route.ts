@@ -8,7 +8,7 @@ const supabase = createClient(
 
 const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
-const FACTORY_ADDRESS = "0xf371d55B3Ab9f60222Eb141B060A96fb65867aB9";
+const FACTORY_ADDRESS = "0x4D91A08cbfa57BF8AD62262Ccd6a0943Ce621352";
 const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 
@@ -271,13 +271,7 @@ export async function POST(request: Request) {
       case "checkContractVersion": {
         try {
           const { schedulerAddress, ownerAddress } = params;
-          const { data: configRow } = await supabase
-            .from("app_config")
-            .select("value")
-            .eq("key", "current_factory_address")
-            .maybeSingle();
-
-          const currentFactory = configRow?.value || FACTORY_ADDRESS;
+          const currentFactory = FACTORY_ADDRESS;
 
           const { ethers } = await import("ethers");
           const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
