@@ -315,12 +315,21 @@ export async function POST(request: Request) {
         const { ethers } = await import("ethers");
         const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
         const EXECUTED_TOPIC = ethers.id("ScheduleExecuted(uint256,address,uint256)");
+        const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
+        const EURC_ADDR = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 
         const rows: string[] = [];
         for (const row of data || []) {
           const amountReadable = (Number(row.amount) / 1_000_000).toString();
           const dateStr = new Date(row.execute_after * 1000).toISOString();
           let verified = "no_tx_hash";
+          // Only meaningful for EURC rows: the actual EURC amount the
+          // recipient received on-chain, read from the EURC token's own
+          // Transfer event rather than trusting the DB's `amount` column
+          // (which is always the pre-swap USDC amount the owner approved --
+          // ScheduleExecuted doesn't log the post-swap amount, see
+          // PaymentSchedulerV2.executeSchedule).
+          let actualEurcReceived = "";
 
           if (row.tx_hash) {
             try {
@@ -338,6 +347,25 @@ export async function POST(request: Request) {
                   (log: any) => log.topics[0] === EXECUTED_TOPIC
                 );
                 verified = hasEvent ? "verified" : "no_event";
+
+                if (row.currency === "EURC" && verified === "verified") {
+                  const recipientTopic = ethers.zeroPadValue(
+                    ethers.getAddress(row.recipient.toLowerCase()),
+                    32
+                  );
+                  const transferLog = receipt.logs.find(
+                    (log: any) =>
+                      log.address.toLowerCase() === EURC_ADDR.toLowerCase() &&
+                      log.topics[0] === TRANSFER_TOPIC &&
+                      log.topics[2]?.toLowerCase() === recipientTopic.toLowerCase()
+                  );
+                  if (transferLog) {
+                    const receivedRaw = BigInt(transferLog.data);
+                    actualEurcReceived = (Number(receivedRaw) / 1_000_000).toString();
+                  } else {
+                    verified = "eurc_transfer_not_found";
+                  }
+                }
               }
             } catch (e) {
               verified = "verify_error";
@@ -354,11 +382,13 @@ export async function POST(request: Request) {
               row.status,
               row.tx_hash || "",
               verified,
+              actualEurcReceived,
             ].join(",")
           );
         }
 
-        const header = "label,recipient,amount,currency,execute_after,status,tx_hash,onchain_verified\n";
+        const header =
+          "label,recipient,amount,currency,execute_after,status,tx_hash,onchain_verified,actual_eurc_received\n";
         const csv = header + rows.join("\n");
 
         return new NextResponse(csv, {
