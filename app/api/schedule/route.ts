@@ -301,16 +301,54 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
         }
 
-        const { data, error } = await supabase
+        // Two sources of "executed" history need to be combined:
+        //   - pending_schedules with status="executed": one-time schedules,
+        //     which stay on this row permanently after their single run.
+        //   - schedule_executions: recurring schedules, whose
+        //     pending_schedules row instead advances execute_after and
+        //     stays status="approved" (see dashboard displayStatus), so
+        //     each past run is logged separately here instead.
+        // Without the second source, a recurring EURC/USDC schedule that
+        // had already run one or more times would never appear in this
+        // export at all.
+        const { data: oneTimeData, error: oneTimeError } = await supabase
           .from("pending_schedules")
           .select("*")
           .eq("scheduler_address", schedulerAddress)
           .eq("status", "executed")
           .order("execute_after", { ascending: true });
 
-        if (error) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
+        if (oneTimeError) {
+          return NextResponse.json({ error: oneTimeError.message }, { status: 500 });
         }
+
+        const { data: executionData, error: executionError } = await supabase
+          .from("schedule_executions")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .order("execute_after", { ascending: true });
+
+        if (executionError) {
+          return NextResponse.json({ error: executionError.message }, { status: 500 });
+        }
+
+        // Normalize schedule_executions rows to look like pending_schedules
+        // rows so the rest of this handler (amount formatting, on-chain
+        // verification, CSV row building) can treat both sources uniformly.
+        const executionRows = (executionData || []).map((e: any) => ({
+          label: null,
+          recipient: e.recipient,
+          amount: e.amount,
+          currency: e.currency,
+          execute_after: e.execute_after,
+          status: "executed",
+          tx_hash: e.tx_hash,
+          scheduler_address: e.scheduler_address,
+        }));
+
+        const data = [...(oneTimeData || []), ...executionRows].sort(
+          (a, b) => a.execute_after - b.execute_after
+        );
 
         const { ethers } = await import("ethers");
         const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
