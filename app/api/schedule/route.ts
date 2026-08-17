@@ -264,6 +264,29 @@ export async function POST(request: Request) {
         return NextResponse.json({ schedules: data }, { status: 200 });
       }
 
+      // ダッシュボードのカレンダー表示用: schedule_executionsから過去の
+      // 実行履歴を取得する。pending_schedulesのexecute_afterは繰り返し
+      // スケジュールの「次回予定日」しか保持していないため、過去に
+      // 実際に実行された日付を表示するにはこちらを別途参照する必要がある。
+      case "listExecutions": {
+        const { schedulerAddress } = params;
+        if (!schedulerAddress) {
+          return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("schedule_executions")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .order("execute_after", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ executions: data }, { status: 200 });
+      }
+
       // 履歴CSVダウンロード用。executedステータスのもののみ対象とし、
       // オンチェーンのtx_hashも含めて出力する。
       case "exportCsv": {
