@@ -332,11 +332,20 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: executionError.message }, { status: 500 });
         }
 
+        // schedule_executions doesn't store its own label, but each row
+        // has schedule_id pointing back to the pending_schedules row it
+        // came from, so look those labels up in one batch query.
+        const scheduleIds = [...new Set((executionData || []).map((e: any) => e.schedule_id))];
+        const { data: labelRows } = scheduleIds.length
+          ? await supabase.from("pending_schedules").select("id, label").in("id", scheduleIds)
+          : { data: [] as any[] };
+        const labelById = new Map((labelRows || []).map((r: any) => [r.id, r.label]));
+
         // Normalize schedule_executions rows to look like pending_schedules
         // rows so the rest of this handler (amount formatting, on-chain
         // verification, CSV row building) can treat both sources uniformly.
         const executionRows = (executionData || []).map((e: any) => ({
-          label: null,
+          label: labelById.get(e.schedule_id) ?? null,
           recipient: e.recipient,
           amount: e.amount,
           currency: e.currency,
@@ -368,6 +377,7 @@ export async function POST(request: Request) {
           // ScheduleExecuted doesn't log the post-swap amount, see
           // PaymentSchedulerV2.executeSchedule).
           let actualEurcReceived = "";
+          let swapRate = "";
 
           if (row.tx_hash) {
             try {
@@ -400,6 +410,10 @@ export async function POST(request: Request) {
                   if (transferLog) {
                     const receivedRaw = BigInt(transferLog.data);
                     actualEurcReceived = (Number(receivedRaw) / 1_000_000).toString();
+                    const usdcSent = Number(row.amount) / 1_000_000;
+                    if (usdcSent > 0) {
+                      swapRate = (Number(receivedRaw) / 1_000_000 / usdcSent).toFixed(6);
+                    }
                   } else {
                     verified = "eurc_transfer_not_found";
                   }
@@ -421,12 +435,13 @@ export async function POST(request: Request) {
               row.tx_hash || "",
               verified,
               actualEurcReceived,
+              swapRate,
             ].join(",")
           );
         }
 
         const header =
-          "label,recipient,amount,currency,execute_after,status,tx_hash,onchain_verified,actual_eurc_received\n";
+          "label,recipient,amount,currency,execute_after,status,tx_hash,onchain_verified,actual_eurc_received,swap_rate\n";
         const csv = header + rows.join("\n");
 
         return new NextResponse(csv, {
