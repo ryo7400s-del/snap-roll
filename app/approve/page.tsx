@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useCircleAuth } from "../components/useCircleAuth";
 import { usePasskey } from "../components/usePasskey";
+import { fromUsdcUnits } from "../components/usdc";
 
 type PendingSchedule = {
   id: string;
@@ -29,6 +30,7 @@ export default function ApprovePage() {
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
+  const [eurcQuotes, setEurcQuotes] = useState<Record<string, string>>({});
   const [pendingLoading, setPendingLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -66,8 +68,32 @@ export default function ApprovePage() {
       body: JSON.stringify({ action: "listPending", schedulerAddress: address }),
     });
     const data = await res.json();
-    setPendingList(data.pending || []);
+    const pending: PendingSchedule[] = data.pending || [];
+    setPendingList(pending);
     setPendingLoading(false);
+
+    const eurcItems = pending.filter((p) => p.currency === "EURC");
+    if (eurcItems.length > 0) {
+      const quotes = await Promise.all(
+        eurcItems.map(async (item) => {
+          try {
+            const quoteRes = await fetch("/api/circle", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "quoteEurc", amountUsdc: item.amount }),
+            });
+            const quoteData = await quoteRes.json();
+            if (!quoteData.estimatedEurc) return null;
+            return [item.id, fromUsdcUnits(quoteData.estimatedEurc)] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setEurcQuotes(
+        Object.fromEntries(quotes.filter((q): q is readonly [string, string] => q !== null))
+      );
+    }
   };
   const fetchWhitelist = async (address: string) => {
     if (!address) return;
@@ -638,10 +664,29 @@ export default function ApprovePage() {
                     ⚠ Not whitelisted — approval disabled
                   </div>
                 )}
+                {item.currency === "EURC" && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#2E5CFF",
+                      background: "#EAF0FF",
+                      borderRadius: 8,
+                      padding: "3px 8px",
+                      display: "inline-block",
+                      marginBottom: 6,
+                    }}
+                  >
+                    USDC → EURC auto-swap
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 12 }}>
                   {item.currency || "USDC"} ·{" "}
                   {new Date(item.execute_after * 1000).toLocaleDateString()}
                   {item.interval_seconds ? " · repeats" : ""}
+                  {item.currency === "EURC" && eurcQuotes[item.id] !== undefined && (
+                    <> · ≈ {eurcQuotes[item.id]} EURC</>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button

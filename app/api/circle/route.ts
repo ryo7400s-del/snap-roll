@@ -223,6 +223,30 @@ export async function POST(request: Request) {
       }
 
 
+      case "quoteEurc": {
+        // Read-only Curve get_dy() quote so the approve screen can show
+        // "≈ X EURC" for pending EURC schedules. This intentionally mirrors
+        // the on-chain quote path in PaymentSchedulerV2._createSchedule, but
+        // reading it here is just for display -- the actual min_dy used at
+        // execution time is still computed on-chain against the live rate.
+        try {
+          const { amountUsdc } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const curveAbi = ["function get_dy(int128 i, int128 j, uint256 dx) view returns (uint256)"];
+          const curve = new ethers.Contract(
+            "0x2D84D79C852f6842AbE0304b70bBaA1506AdD457",
+            curveAbi,
+            provider
+          );
+          const dy = await curve.get_dy(0, 1, BigInt(amountUsdc));
+          return NextResponse.json({ estimatedEurc: dy.toString() }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
       case "checkAllowance": {
         try {
           const { ownerAddress, schedulerAddress } = params;
