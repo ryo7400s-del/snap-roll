@@ -123,7 +123,9 @@ export async function POST(request: Request) {
               (row: any) =>
                 `${row.label ?? row.recipient},${fromUsdcUnits(row.amount)} ${row.currency ?? "USDC"},${new Date(
                   row.execute_after * 1000
-                ).toISOString()}${row.interval_seconds ? ` (repeats every ${row.interval_seconds}s)` : ""}`
+                ).toISOString()}${row.interval_seconds ? ` (repeats every ${row.interval_seconds}s)` : ""}${
+                  row.currency === "EURC" ? ` [auto-swap, max slippage ${(row.slippage_bps ?? 100) / 100}%]` : ""
+                }`
             )
             .join("\n");
 
@@ -142,8 +144,11 @@ export async function POST(request: Request) {
             for (const row of data) {
               const rowText =
                 `Recipient: ${row.recipient}\n` +
-                `Amount: ${fromUsdcUnits(row.amount)}\n` +
-                `Execute after: ${new Date(row.execute_after * 1000).toISOString()}`;
+                `Amount: ${fromUsdcUnits(row.amount)} ${row.currency ?? "USDC"}\n` +
+                `Execute after: ${new Date(row.execute_after * 1000).toISOString()}` +
+                (row.currency === "EURC"
+                  ? `\n⚠ Will auto-swap USDC → EURC on-chain (max slippage ${(row.slippage_bps ?? 100) / 100}%)`
+                  : "");
 
               await sendTelegramMessage(approver.telegram_chat_id, rowText, [
                 [
