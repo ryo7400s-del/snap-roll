@@ -97,6 +97,7 @@ export async function POST(request: Request) {
           status: "pending",
           interval_seconds: e.intervalSeconds ?? null,
           currency: e.currency ?? "USDC",
+          slippage_bps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
           label: e.label ?? null,
         }));
 

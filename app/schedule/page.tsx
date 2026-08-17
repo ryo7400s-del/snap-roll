@@ -12,6 +12,7 @@ type ScheduleEntry = {
   address: string;
   amount: string;
   currency: string;
+  slippageBps: number; // only meaningful when currency === "EURC"
   interval: "" | "weekly" | "monthly";
   date: string; // "today" | "tomorrow" | "YYYY/MM/DD"
   whitelisted?: boolean | null; // null = 未確認
@@ -66,6 +67,7 @@ export default function SchedulePage() {
     address: "",
     amount: "",
     currency: "USDC",
+    slippageBps: 100,
     interval: "",
     date: "today",
   });
@@ -144,6 +146,7 @@ export default function SchedulePage() {
       address: "",
       amount: "",
       currency: "USDC",
+      slippageBps: 100,
       interval: "",
       date: "today",
     });
@@ -155,15 +158,27 @@ export default function SchedulePage() {
       transformHeader: (header) => header.trim().toLowerCase(),
       complete: async (results) => {
         const rows: ScheduleEntry[] = (results.data as any[])
-          .map((r) => ({
-            label: r.label || "",
-            address: r.address || r.wallet || r.recipient || "",
-            amount: r.amount || "",
-            currency: (r.currency || "USDC").toUpperCase(),
-            interval: (r.interval || "").toLowerCase() as "" | "weekly" | "monthly",
-            date: r.date || "today",
-            whitelisted: null,
-          }))
+          .map((r) => {
+            const currency = (r.currency || "USDC").toUpperCase();
+            const parsedSlippage = parseFloat(r.slippage || r.slippage_bps || "");
+            return {
+              label: r.label || "",
+              address: r.address || r.wallet || r.recipient || "",
+              amount: r.amount || "",
+              currency,
+              // CSV "slippage" column is interpreted as a percentage (e.g. "1" = 1%),
+              // matching the manual-entry UI's 0.5% / 1% / 2% buttons.
+              slippageBps:
+                currency === "EURC"
+                  ? Number.isFinite(parsedSlippage) && parsedSlippage > 0
+                    ? Math.round(parsedSlippage * 100)
+                    : 100
+                  : 100,
+              interval: (r.interval || "").toLowerCase() as "" | "weekly" | "monthly",
+              date: r.date || "today",
+              whitelisted: null,
+            };
+          })
           .filter((r) => r.address && r.amount);
 
         setCsvEntries(rows);
@@ -234,6 +249,7 @@ export default function SchedulePage() {
         executeAfter: parseDateField(e.date),
         label: e.label || null,
         currency: e.currency || "USDC",
+        slippageBps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
         intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
       });
     }
@@ -393,6 +409,71 @@ export default function SchedulePage() {
                 placeholder="Amount"
                 style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 8, background: "#F7F9FC", boxSizing: "border-box" }}
               />
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setManualEntry({ ...manualEntry, currency: "USDC" })}
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    borderRadius: 8,
+                    border: manualEntry.currency === "USDC" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                    background: manualEntry.currency === "USDC" ? "#EAF0FF" : "#F7F9FC",
+                    color: manualEntry.currency === "USDC" ? "#2E5CFF" : "#6B7688",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  USDC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManualEntry({ ...manualEntry, currency: "EURC" })}
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    borderRadius: 8,
+                    border: manualEntry.currency === "EURC" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                    background: manualEntry.currency === "EURC" ? "#EAF0FF" : "#F7F9FC",
+                    color: manualEntry.currency === "EURC" ? "#2E5CFF" : "#6B7688",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  EURC (auto-swap from USDC)
+                </button>
+              </div>
+              {manualEntry.currency === "EURC" && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 6 }}>
+                    Max slippage for the USDC→EURC swap:
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[50, 100, 200].map((bps) => (
+                      <button
+                        key={bps}
+                        type="button"
+                        onClick={() => setManualEntry({ ...manualEntry, slippageBps: bps })}
+                        style={{
+                          flex: 1,
+                          padding: "8px 0",
+                          borderRadius: 8,
+                          border: manualEntry.slippageBps === bps ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                          background: manualEntry.slippageBps === bps ? "#EAF0FF" : "#F7F9FC",
+                          color: manualEntry.slippageBps === bps ? "#2E5CFF" : "#6B7688",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {(bps / 100).toFixed(1)}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <select
                 value={manualEntry.interval}
                 onChange={(e) => setManualEntry({ ...manualEntry, interval: e.target.value as any })}
