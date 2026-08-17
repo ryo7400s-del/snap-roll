@@ -392,6 +392,9 @@ export default function ApprovePage() {
     const recipients = items.map((i) => i.recipient);
     const amounts = items.map((i) => i.amount);
     const executeAfters = items.map((i) => i.execute_after);
+    const intervalSecondsArr = items.map((i) => i.interval_seconds || 0);
+    const useEURCArr = items.map((i) => i.currency === "EURC");
+    const slippageBpsArr = items.map((i) => i.slippage_bps ?? 100);
     const requestIds = items.map((i) => "0x" + i.id.replace(/-/g, "").padStart(64, "0"));
 
     const res = await fetch("/api/circle", {
@@ -405,6 +408,9 @@ export default function ApprovePage() {
         recipients,
         amounts,
         executeAfters,
+        intervalSecondsArr,
+        useEURCArr,
+        slippageBpsArr,
         requestIds,
       }),
     });

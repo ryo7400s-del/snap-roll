@@ -633,7 +633,18 @@ export async function POST(request: Request) {
       }
 
       case "approveSchedulesBatch": {
-        const { userToken, walletId, schedulerAddress, recipients, amounts, executeAfters, requestIds } = params;
+        const {
+          userToken,
+          walletId,
+          schedulerAddress,
+          recipients,
+          amounts,
+          executeAfters,
+          intervalSecondsArr,
+          useEURCArr,
+          slippageBpsArr,
+          requestIds,
+        } = params;
         const res = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
           {
@@ -647,9 +658,25 @@ export async function POST(request: Request) {
               idempotencyKey: crypto.randomUUID(),
               walletId,
               contractAddress: schedulerAddress,
-              abiFunctionSignature: "createSchedulesForBatch(address[],uint256[],uint64[],bytes32[])",
-              abiParameters: [recipients, amounts, executeAfters, requestIds],
+              // Switched from createSchedulesForBatch (one-time only, no EURC)
+              // to createRecurringSchedulesForBatchWithEURC so a single batch
+              // approval can mix one-time/recurring and USDC/EURC schedules.
+              abiFunctionSignature:
+                "createRecurringSchedulesForBatchWithEURC(address[],uint256[],uint64[],uint64[],bool[],uint16[],bytes32[])",
+              abiParameters: [
+                recipients,
+                amounts,
+                executeAfters,
+                intervalSecondsArr,
+                useEURCArr,
+                slippageBpsArr,
+                requestIds,
+              ],
               feeLevel: "MEDIUM",
+              // This now deploys the same per-item EURC/Curve-swap logic used
+              // by single-schedule approval, so give it the same generous
+              // fixed gas limit rather than relying on estimation.
+              gasLimit: "5000000",
             }),
           }
         );
