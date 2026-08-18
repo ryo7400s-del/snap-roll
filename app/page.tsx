@@ -51,14 +51,21 @@ export default function Home() {
       const eurc = fetchedBalances.find((b) => b.token?.symbol === "EURC");
       if (eurc && Number(eurc.amount) > 0) {
         try {
+          // Circle's getBalance returns amount as a human-readable decimal
+          // string (e.g. "19.00"), but quoteEurcToUsdc expects the raw
+          // 6-decimal on-chain integer (e.g. "19000000") since it calls
+          // the Curve pool's get_dy directly. Convert before sending.
+          const eurcRaw = Math.round(Number(eurc.amount) * 1_000_000).toString();
           const quoteRes = await fetch("/api/circle", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "quoteEurcToUsdc", amountEurc: eurc.amount }),
+            body: JSON.stringify({ action: "quoteEurcToUsdc", amountEurc: eurcRaw }),
           });
           const quoteData = await quoteRes.json();
           if (quoteData.estimatedUsdc) {
-            setEurcToUsdcRate(Number(quoteData.estimatedUsdc) / Number(eurc.amount));
+            // estimatedUsdc is also a raw 6-decimal integer, so divide by
+            // eurcRaw (not eurc.amount) to get a dimensionless rate.
+            setEurcToUsdcRate(Number(quoteData.estimatedUsdc) / Number(eurcRaw));
           }
         } catch {
           // Leave eurcToUsdcRate as null; Total Balance falls back to
