@@ -44,6 +44,7 @@ export default function Home() {
   }, [loginResult, wallet]);
 
   const usdcBalance = balances.find((b) => b.token?.symbol === "USDC");
+  const eurcBalance = balances.find((b) => b.token?.symbol === "EURC");
 
   const handleCopyAddress = () => {
     if (!wallet?.address) return;
@@ -283,6 +284,49 @@ export default function Home() {
                 ${formatAmount(usdcBalance?.amount ?? "0")}
               </div>
             </div>
+            {eurcBalance && Number(eurcBalance.amount) > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 14px",
+                  background: "#FFFFFF",
+                  border: "1px solid #EEF1F6",
+                  borderRadius: 16,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: "50%",
+                      background: "#003399",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    EU
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                      Euro Coin
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9AA3B2" }}>
+                      {formatAmount(eurcBalance.amount)} EURC
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                  €{formatAmount(eurcBalance.amount)}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
