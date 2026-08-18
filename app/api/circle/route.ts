@@ -224,6 +224,29 @@ export async function POST(request: Request) {
       }
 
 
+      case "quoteEurcToUsdc": {
+        // Reverse-direction Curve get_dy() quote (EURC -> USDC) used to
+        // convert a wallet's EURC balance into a USDC-equivalent figure
+        // for the home screen's combined Total Balance. This is the
+        // pool's current exchange rate, not a real-world FX rate.
+        try {
+          const { amountEurc } = params;
+          const { ethers } = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+          const curveAbi = ["function get_dy(int128 i, int128 j, uint256 dx) view returns (uint256)"];
+          const curve = new ethers.Contract(
+            "0x2D84D79C852f6842AbE0304b70bBaA1506AdD457",
+            curveAbi,
+            provider
+          );
+          const dy = await curve.get_dy(1, 0, BigInt(amountEurc));
+          return NextResponse.json({ estimatedUsdc: dy.toString() }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
       case "quoteEurc": {
         // Read-only Curve get_dy() quote so the approve screen can show
         // "≈ X EURC" for pending EURC schedules. This intentionally mirrors

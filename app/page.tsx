@@ -22,6 +22,7 @@ export default function Home() {
   const { deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(false);
+  const [eurcToUsdcRate, setEurcToUsdcRate] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -38,8 +39,32 @@ export default function Home() {
         }),
       });
       const data = await res.json();
-      setBalances(data.tokenBalances || []);
+      const fetchedBalances: TokenBalance[] = data.tokenBalances || [];
+      setBalances(fetchedBalances);
       setLoading(false);
+
+      // For the combined Total Balance figure, convert the EURC balance to
+      // its USDC-equivalent value using the same on-chain Curve pool rate
+      // used elsewhere (e.g. approve screen's "≈ X EURC" estimate). This is
+      // the pool's current exchange rate, not a real-world FX rate, so the
+      // figure is an approximation rather than an authoritative USD value.
+      const eurc = fetchedBalances.find((b) => b.token?.symbol === "EURC");
+      if (eurc && Number(eurc.amount) > 0) {
+        try {
+          const quoteRes = await fetch("/api/circle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "quoteEurcToUsdc", amountEurc: eurc.amount }),
+          });
+          const quoteData = await quoteRes.json();
+          if (quoteData.estimatedUsdc) {
+            setEurcToUsdcRate(Number(quoteData.estimatedUsdc) / Number(eurc.amount));
+          }
+        } catch {
+          // Leave eurcToUsdcRate as null; Total Balance falls back to
+          // USDC-only rather than showing a stale or wrong conversion.
+        }
+      }
     })();
   }, [loginResult, wallet]);
 
@@ -111,7 +136,16 @@ export default function Home() {
                 letterSpacing: "-0.02em",
               }}
             >
-              {loading ? "..." : `$${formatAmount(usdcBalance?.amount ?? "0")}`}
+              {loading
+                ? "..."
+                : `$${formatAmount(
+                    (
+                      Number(usdcBalance?.amount ?? "0") +
+                      (eurcBalance && eurcToUsdcRate !== null
+                        ? Number(eurcBalance.amount) * eurcToUsdcRate
+                        : 0)
+                    ).toString()
+                  )}`}
             </div>
           </div>
 
