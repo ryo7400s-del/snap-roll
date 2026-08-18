@@ -11,6 +11,7 @@ const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
 const FACTORY_ADDRESS = "0x4D91A08cbfa57BF8AD62262Ccd6a0943Ce621352";
 const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 
 export async function POST(request: Request) {
   try {
@@ -754,7 +755,13 @@ export async function POST(request: Request) {
 
       case "instantSend": {
         try {
-          const { userToken, walletId, recipient, amount } = params;
+          const { userToken, walletId, recipient, amount, currency } = params;
+          // Sends whatever the wallet already holds -- USDC or EURC -- with
+          // no swap involved. Unlike scheduled EURC payments (which convert
+          // USDC -> EURC on-chain via PaymentSchedulerV2 + Curve), instant
+          // send goes straight through Circle's transfer API, so the wallet
+          // must already hold EURC for a "EURC" instant send to succeed.
+          const tokenAddress = currency === "EURC" ? EURC_ADDRESS : USDC_ADDRESS;
 
           const balanceRes = await fetch(
             `${CIRCLE_BASE_URL}/v1/w3s/wallets/${walletId}/balances`,
@@ -769,14 +776,14 @@ export async function POST(request: Request) {
             }
           );
           const balanceData = await balanceRes.json();
-          const usdcToken = (balanceData.data?.tokenBalances || []).find(
+          const matchedToken = (balanceData.data?.tokenBalances || []).find(
             (t: any) =>
-              t.token?.tokenAddress?.toLowerCase() === USDC_ADDRESS.toLowerCase()
+              t.token?.tokenAddress?.toLowerCase() === tokenAddress.toLowerCase()
           );
 
-          if (!usdcToken) {
+          if (!matchedToken) {
             return NextResponse.json(
-              { error: "USDC token not found in this wallet" },
+              { error: `${currency === "EURC" ? "EURC" : "USDC"} token not found in this wallet` },
               { status: 404 }
             );
           }
@@ -793,7 +800,7 @@ export async function POST(request: Request) {
               body: JSON.stringify({
                 idempotencyKey: crypto.randomUUID(),
                 walletId,
-                tokenId: usdcToken.token.id,
+                tokenId: matchedToken.token.id,
                 destinationAddress: recipient,
                 amounts: [amount],
                 feeLevel: "MEDIUM",

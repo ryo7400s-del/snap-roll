@@ -10,6 +10,7 @@ export default function SendPage() {
 
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"USDC" | "EURC">("USDC");
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
@@ -78,6 +79,7 @@ export default function SendPage() {
         walletId: wallet.id,
         recipient: finalRecipient,
         amount,
+        currency,
       }),
     });
     const sendData = await sendRes.json();
@@ -239,7 +241,7 @@ export default function SendPage() {
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="Amount (USDC)"
+              placeholder={`Amount (${currency})`}
               inputMode="decimal"
               style={{
                 width: "100%",
@@ -251,6 +253,42 @@ export default function SendPage() {
                 boxSizing: "border-box",
               }}
             />
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            <button
+              type="button"
+              onClick={() => setCurrency("USDC")}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                borderRadius: 8,
+                border: currency === "USDC" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                background: currency === "USDC" ? "#EAF0FF" : "#F7F9FC",
+                color: currency === "USDC" ? "#2E5CFF" : "#6B7688",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              USDC
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrency("EURC")}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                borderRadius: 8,
+                border: currency === "EURC" ? "1px solid #2E5CFF" : "1px solid #EEF1F6",
+                background: currency === "EURC" ? "#EAF0FF" : "#F7F9FC",
+                color: currency === "EURC" ? "#2E5CFF" : "#6B7688",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              EURC
+            </button>
           </div>
 
           <button
