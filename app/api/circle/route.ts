@@ -8,7 +8,7 @@ const supabase = createClient(
 
 const CIRCLE_BASE_URL = "https://api.circle.com";
 const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY as string;
-const FACTORY_ADDRESS = "0x4D91A08cbfa57BF8AD62262Ccd6a0943Ce621352";
+const FACTORY_ADDRESS = "0x4BF0e43De13B5396eE4046AC973DbA554760aD2A";
 const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
@@ -535,6 +535,32 @@ export async function POST(request: Request) {
           const message = err instanceof Error ? err.message : String(err);
           return NextResponse.json({ error: message }, { status: 500 });
         }
+      }
+
+      case "updateScheduleAmount": {
+        const { userToken, walletId, schedulerAddress, scheduleId, newAmount } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: schedulerAddress,
+              abiFunctionSignature: "updateScheduleAmount(uint256,uint256)",
+              abiParameters: [scheduleId, newAmount],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
       }
 
       case "toggleSchedule": {

@@ -232,6 +232,26 @@ export async function POST(request: Request) {
       }
 
 
+      // Updates the DB record after an on-chain updateScheduleAmount call
+      // succeeds, so the dashboard reflects the new amount without needing
+      // a full re-fetch of on-chain schedule state.
+      case "updateAmount": {
+        const { id, newAmount } = params;
+        if (!id || newAmount === undefined) {
+          return NextResponse.json({ error: "Missing id or newAmount" }, { status: 400 });
+        }
+        const { data, error } = await supabase
+          .from("pending_schedules")
+          .update({ amount: newAmount })
+          .eq("id", id)
+          .select()
+          .single();
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        return NextResponse.json(data, { status: 200 });
+      }
+
       case "markPaused": {
         const { id } = params;
         if (!id) {

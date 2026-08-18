@@ -107,6 +107,119 @@ export default function DashboardPage() {
   }, [schedulerAddress]);
   const [pausingId, setPausingId] = useState<string | null>(null);
 
+  const [updatingAmountId, setUpdatingAmountId] = useState<string | null>(null);
+
+  const handleUpdateAmount = async (s: ScheduleRow) => {
+    if (!sdk || !loginResult || !wallet) return;
+    if (!s.interval_seconds) {
+      alert("Only recurring schedules can have their amount updated.");
+      return;
+    }
+
+    const currentReadable = formatUsdc(s.amount);
+    const input = window.prompt(
+      `New amount for ${s.label || s.recipient} (currently ${currentReadable} ${s.currency || "USDC"}):`,
+      currentReadable
+    );
+    if (input === null) return;
+
+    const parsed = Number(input);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      alert("Enter a valid non-negative amount.");
+      return;
+    }
+    const newAmountRaw = Math.round(parsed * 1_000_000).toString();
+
+    setUpdatingAmountId(s.id);
+    try {
+      const requestId = "0x" + s.id.replace(/-/g, "").padStart(64, "0");
+      const findRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "findScheduleId",
+          schedulerAddress: s.scheduler_address,
+          requestId,
+        }),
+      });
+      const findData = await findRes.json();
+      if (typeof findData.scheduleId !== "number") {
+        setUpdatingAmountId(null);
+        return;
+      }
+
+      const updateRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updateScheduleAmount",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          schedulerAddress: s.scheduler_address,
+          scheduleId: findData.scheduleId,
+          newAmount: newAmountRaw,
+        }),
+      });
+      const updateData = await updateRes.json();
+      if (!updateData.challengeId) {
+        setUpdatingAmountId(null);
+        alert("Failed to create update challenge: " + JSON.stringify(updateData));
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+      sdk.execute(updateData.challengeId, async (error: unknown) => {
+        if (error) {
+          setUpdatingAmountId(null);
+          alert("Update failed: " + JSON.stringify(error));
+          return;
+        }
+
+        // Same reasoning as handlePause: the signing callback doesn't
+        // confirm on-chain success, so verify before writing to the DB.
+        await new Promise((r) => setTimeout(r, 3000));
+
+        const statusRes = await fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "checkTransactionStatus",
+            userToken: loginResult.userToken,
+            walletId: wallet.id,
+          }),
+        });
+        const statusData = await statusRes.json();
+        setUpdatingAmountId(null);
+
+        if (statusData.state === "FAILED") {
+          alert(
+            `Amount update failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+          );
+          return;
+        }
+
+        if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+          alert(`Update status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
+          return;
+        }
+
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "updateAmount", id: s.id, newAmount: newAmountRaw }),
+        });
+        setSchedules((prev) =>
+          prev.map((row) => (row.id === s.id ? { ...row, amount: newAmountRaw } : row))
+        );
+      });
+    } catch {
+      setUpdatingAmountId(null);
+    }
+  };
+
   const handlePause = async (s: ScheduleRow) => {
     if (!sdk || !loginResult || !wallet) return;
     setPausingId(s.id);
@@ -541,6 +654,25 @@ export default function DashboardPage() {
                       {formatUsdc(s.amount)} {s.currency || "USDC"} · Next run:{" "}
                       {s.execute_after <= now ? "within 6h" : new Date(s.execute_after * 1000).toLocaleDateString()}
                     </span>
+                    <button
+                      onClick={() => handleUpdateAmount(s)}
+                      disabled={updatingAmountId === s.id}
+                      style={{
+                        background: "#EAF0FF",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "4px 10px",
+                        color: "#2E5CFF",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: updatingAmountId === s.id ? 0.6 : 1,
+                        whiteSpace: "nowrap",
+                        marginRight: 6,
+                      }}
+                    >
+                      {updatingAmountId === s.id ? "Updating..." : "Edit amount"}
+                    </button>
                     <button
                       onClick={() => handlePause(s)}
                       disabled={pausingId === s.id}
