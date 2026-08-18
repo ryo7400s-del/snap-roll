@@ -30,6 +30,26 @@ const SCHEDULER_ABI = [
   "function getSchedule(uint256 scheduleId) view returns (tuple(address recipient, uint256 amount, uint64 executeAfter, uint64 intervalSeconds, bool active, bool useEURC, uint16 slippageBps, bytes32 requestId))",
 ];
 
+const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
+
+// ScheduleExecuted only logs the pre-swap USDC amount (see
+// PaymentSchedulerV2.executeSchedule), so for EURC schedules the actual
+// post-swap amount the recipient received has to be recovered from the
+// EURC token's own Transfer event in the same receipt. Returns the raw
+// (6-decimal) EURC amount as a string, or null if not found/applicable.
+function findActualEurcReceived(receipt, recipient) {
+  const recipientTopic = ethers.zeroPadValue(ethers.getAddress(recipient.toLowerCase()), 32);
+  const transferLog = receipt.logs.find(
+    (log) =>
+      log.address.toLowerCase() === EURC_ADDRESS.toLowerCase() &&
+      log.topics[0] === TRANSFER_TOPIC &&
+      log.topics[2]?.toLowerCase() === recipientTopic.toLowerCase()
+  );
+  if (!transferLog) return null;
+  return BigInt(transferLog.data).toString();
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -95,8 +115,16 @@ async function main() {
       const contract = new ethers.Contract(row.scheduler_address, SCHEDULER_ABI, wallet);
       const tx = await contract.executeSchedule(scheduleId);
       console.log(`  Executing... tx: ${tx.hash}`);
-      await tx.wait();
+      const receipt = await tx.wait();
       console.log(`  Success: ${tx.hash}`);
+
+      // For EURC schedules, record the actual post-swap amount the
+      // recipient received (from the EURC token's Transfer event) instead
+      // of the pre-swap USDC amount in row.amount -- otherwise the
+      // dashboard/history would show e.g. "0.30 EURC" when only 0.30 USDC
+      // worth was swapped and the recipient actually got something else.
+      const executionAmount =
+        row.currency === "EURC" ? findActualEurcReceived(receipt, row.recipient) ?? row.amount : row.amount;
 
       // Record this execution permanently, independent of pending_schedules'
       // current execute_after/status. pending_schedules only tracks the
@@ -108,7 +136,7 @@ async function main() {
         schedule_id: row.id,
         scheduler_address: row.scheduler_address,
         recipient: row.recipient,
-        amount: row.amount,
+        amount: executionAmount,
         execute_after: row.execute_after,
         tx_hash: tx.hash,
         currency: row.currency,
