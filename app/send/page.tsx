@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCircleAuth } from "../components/useCircleAuth";
 import { usePasskey } from "../components/usePasskey";
+
+// Arc testnet gas is paid in USDC (not a separate native token), so a MAX
+// send in USDC must hold back some balance for future transaction fees --
+// otherwise the very next tx (even another instant send) could fail with
+// insufficient gas. EURC isn't used for gas, so its MAX can be the full
+// balance. This is a flat reserve rather than a real gas estimate since
+// instant sends here don't set an explicit gasLimit (see approveSchedulesBatch
+// / deployFactory, which do set one for heavier CREATE2/batch operations).
+const USDC_GAS_RESERVE = 0.5;
 
 export default function SendPage() {
   const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
@@ -13,6 +22,40 @@ export default function SendPage() {
   const [currency, setCurrency] = useState<"USDC" | "EURC">("USDC");
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [eurcBalance, setEurcBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (!loginResult?.userToken || !wallet?.id) return;
+      const res = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "getBalance",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+        }),
+      });
+      const data = await res.json();
+      const balances: { amount: string; token: { symbol?: string } }[] = data.tokenBalances || [];
+      const usdc = balances.find((b) => b.token?.symbol === "USDC");
+      const eurc = balances.find((b) => b.token?.symbol === "EURC");
+      setUsdcBalance(usdc ? Number(usdc.amount) : 0);
+      setEurcBalance(eurc ? Number(eurc.amount) : 0);
+    })();
+  }, [loginResult, wallet]);
+
+  const handleMax = () => {
+    if (currency === "USDC") {
+      if (usdcBalance === null) return;
+      const max = Math.max(0, usdcBalance - USDC_GAS_RESERVE);
+      setAmount(max.toFixed(2));
+    } else {
+      if (eurcBalance === null) return;
+      setAmount(eurcBalance.toFixed(2));
+    }
+  };
 
   const handleSend = async () => {
     if (!sdk || !loginResult || !wallet) {
@@ -238,21 +281,53 @@ export default function SendPage() {
                 boxSizing: "border-box",
               }}
             />
-            <input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={`Amount (${currency})`}
-              inputMode="decimal"
-              style={{
-                width: "100%",
-                border: "1px solid #EEF1F6",
-                borderRadius: 10,
-                padding: 10,
-                fontSize: 13,
-                background: "#F7F9FC",
-                boxSizing: "border-box",
-              }}
-            />
+            <div style={{ position: "relative" }}>
+              <input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder={`Amount (${currency})`}
+                inputMode="decimal"
+                style={{
+                  width: "100%",
+                  border: "1px solid #EEF1F6",
+                  borderRadius: 10,
+                  padding: "10px 56px 10px 10px",
+                  fontSize: 13,
+                  background: "#F7F9FC",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleMax}
+                style={{
+                  position: "absolute",
+                  right: 6,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  background: "#EAF0FF",
+                  color: "#2E5CFF",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                MAX
+              </button>
+            </div>
+            {currency === "USDC" && usdcBalance !== null && (
+              <div style={{ fontSize: 10, color: "#9AA3B2", marginTop: 4 }}>
+                Balance: {usdcBalance.toFixed(2)} USDC (MAX reserves {USDC_GAS_RESERVE.toFixed(2)} for gas)
+              </div>
+            )}
+            {currency === "EURC" && eurcBalance !== null && (
+              <div style={{ fontSize: 10, color: "#9AA3B2", marginTop: 4 }}>
+                Balance: {eurcBalance.toFixed(2)} EURC
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             <button
