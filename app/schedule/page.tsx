@@ -81,6 +81,26 @@ export default function SchedulePage() {
 
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+
+  const handleResend = async (id: string) => {
+    setResendingId(id);
+    try {
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resendNotification", id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed to resend: " + (data.error || "unknown error"));
+      }
+    } catch {
+      alert("Failed to resend notification.");
+    } finally {
+      setResendingId(null);
+    }
+  };
 
   const fetchPending = async () => {
     if (!schedulerAddress) return;
@@ -651,8 +671,36 @@ export default function SchedulePage() {
                   {fromUsdcUnits(item.amount)} {item.currency || "USDC"} · {new Date(item.execute_after * 1000).toLocaleDateString()}
                   {item.interval_seconds ? " · repeats" : ""}
                 </div>
-                <div style={{ fontSize: 10, color: "#2E5CFF", marginTop: 4 }}>
-                  Status: {item.status}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: 6,
+                  }}
+                >
+                  <div style={{ fontSize: 10, color: "#2E5CFF" }}>
+                    Status: {item.status}
+                  </div>
+                  {item.status === "pending" && (
+                    <button
+                      onClick={() => handleResend(item.id)}
+                      disabled={resendingId === item.id}
+                      style={{
+                        background: "#F1F3F8",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "4px 10px",
+                        color: "#6B7688",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: resendingId === item.id ? 0.6 : 1,
+                      }}
+                    >
+                      {resendingId === item.id ? "Sending..." : "Resend notification"}
+                    </button>
+                  )}
                 </div>
               </div>
             ))

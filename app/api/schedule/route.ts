@@ -294,6 +294,68 @@ export async function POST(request: Request) {
       // 実行履歴を取得する。pending_schedulesのexecute_afterは繰り返し
       // スケジュールの「次回予定日」しか保持していないため、過去に
       // 実際に実行された日付を表示するにはこちらを別途参照する必要がある。
+      // Re-sends the Telegram approval notification for a single pending
+      // schedule, e.g. if an approver missed or dismissed the original
+      // message. Reuses the same message format as the initial submit
+      // notification, but for just this one row.
+      case "resendNotification": {
+        const { id } = params;
+        if (!id) {
+          return NextResponse.json({ error: "Missing id" }, { status: 400 });
+        }
+
+        const { data: row, error: rowError } = await supabase
+          .from("pending_schedules")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (rowError || !row) {
+          return NextResponse.json({ error: rowError?.message || "Schedule not found" }, { status: 404 });
+        }
+
+        const { data: approvers, error: approversError } = await supabase
+          .from("approvers")
+          .select("telegram_chat_id")
+          .eq("scheduler_address", row.scheduler_address)
+          .not("telegram_chat_id", "is", null);
+
+        if (approversError) {
+          return NextResponse.json({ error: approversError.message }, { status: 500 });
+        }
+
+        if (!approvers || approvers.length === 0) {
+          return NextResponse.json({ error: "No approvers with Telegram registered" }, { status: 400 });
+        }
+
+        const approvalUrl = `${APP_BASE_URL}/approve?scheduler=${row.scheduler_address}`;
+        const rowText =
+          `🔔 Reminder: pending approval
+
+` +
+          `Recipient: ${row.recipient}
+` +
+          `Amount: ${fromUsdcUnits(row.amount)} ${row.currency ?? "USDC"}
+` +
+          `Execute after: ${new Date(row.execute_after * 1000).toISOString()}` +
+          (row.currency === "EURC"
+            ? `
+⚠ Will auto-swap USDC → EURC on-chain (max slippage ${(row.slippage_bps ?? 100) / 100}%)`
+            : "");
+
+        for (const approver of approvers) {
+          if (!approver.telegram_chat_id) continue;
+          await sendTelegramMessage(approver.telegram_chat_id, rowText, [
+            [
+              { text: "✅ Open approval page", url: approvalUrl },
+              { text: "❌ Reject", callback_data: `reject:${row.id}` },
+            ],
+          ]);
+        }
+
+        return NextResponse.json({ sent: approvers.length }, { status: 200 });
+      }
+
       case "listExecutions": {
         const { schedulerAddress } = params;
         if (!schedulerAddress) {
