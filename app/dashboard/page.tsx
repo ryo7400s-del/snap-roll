@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useCircleAuth } from "../components/useCircleAuth";
+import { usePasskey } from "../components/usePasskey";
 
 type ScheduleRow = {
   id: string;
@@ -61,6 +62,7 @@ function displayStatus(s: { status: string; tx_hash?: string | null; execute_aft
 
 export default function DashboardPage() {
   const { sdk, loginResult, wallet, restoring, login } = useCircleAuth();
+  const { enabled: passkeyEnabled, verifyPasskey } = usePasskey(wallet?.address);
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
@@ -122,6 +124,14 @@ export default function DashboardPage() {
       currentReadable
     );
     if (input === null) return;
+
+    if (passkeyEnabled) {
+      const verified = await verifyPasskey();
+      if (!verified) {
+        alert("Passkey verification failed or cancelled.");
+        return;
+      }
+    }
 
     const parsed = Number(input);
     if (!Number.isFinite(parsed) || parsed < 0) {
