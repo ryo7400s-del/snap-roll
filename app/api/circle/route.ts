@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
 
 const supabase = createClient(
   process.env.SUPABASE_URL as string,
@@ -12,6 +13,25 @@ const FACTORY_ADDRESS = "0x4BF0e43De13B5396eE4046AC973DbA554760aD2A";
 const SCHEDULER_REGISTRY_ADDRESS = "0x2E533d62cd6fC613D7a7c309Cd84D3072e733325";
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+
+// EscrowVault verifier: a dedicated Circle Developer-Controlled Wallet whose
+// sole purpose is signing "this wallet owns this email" attestations for
+// escrow claims. See EscrowVault.sol's contract-level NatSpec for the full
+// trust model this depends on -- in short, this signature is the *only*
+// authorization check claimEscrow performs, so it must only ever be issued
+// after genuine email verification.
+const VERIFIER_WALLET_ID = process.env.VERIFIER_WALLET_ID as string;
+
+let developerWalletsClient: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
+function getDeveloperWalletsClient() {
+  if (!developerWalletsClient) {
+    developerWalletsClient = initiateDeveloperControlledWalletsClient({
+      apiKey: CIRCLE_API_KEY,
+      entitySecret: process.env.CIRCLE_ENTITY_SECRET as string,
+    });
+  }
+  return developerWalletsClient;
+}
 
 export async function POST(request: Request) {
   try {
@@ -265,6 +285,68 @@ export async function POST(request: Request) {
           );
           const dy = await curve.get_dy(0, 1, BigInt(amountUsdc));
           return NextResponse.json({ estimatedEurc: dy.toString() }, { status: 200 });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // Issues a verifier signature authorizing `claimantAddress` to claim
+      // `escrowId` from a specific EscrowVault contract, and logs the
+      // issuance to verifier_signatures for audit purposes (see
+      // EscrowVault.sol's NatSpec: this signature is the entire security
+      // boundary for claimEscrow, so every issuance is recorded so the
+      // stated policy -- only sign after confirmed email verification --
+      // can be checked after the fact).
+      //
+      // IMPORTANT: this action itself does NOT verify email ownership. The
+      // caller of this endpoint is responsible for having already confirmed
+      // (e.g. via Circle's OAuth/email flow) that claimantAddress is
+      // controlled by whoever owns recipientEmail before calling this.
+      case "issueEscrowClaimSignature": {
+        try {
+          const { escrowVaultAddress, escrowId, claimantAddress, recipientEmail } = params;
+          if (!escrowVaultAddress || escrowId === undefined || !claimantAddress || !recipientEmail) {
+            return NextResponse.json(
+              { error: "Missing escrowVaultAddress, escrowId, claimantAddress, or recipientEmail" },
+              { status: 400 }
+            );
+          }
+
+          const { ethers } = await import("ethers");
+          const messageHash = ethers.solidityPackedKeccak256(
+            ["uint256", "address", "address"],
+            [escrowId, ethers.getAddress(claimantAddress.toLowerCase()), ethers.getAddress(escrowVaultAddress.toLowerCase())]
+          );
+
+          const client = getDeveloperWalletsClient();
+          const signResponse = await client.signMessage({
+            walletId: VERIFIER_WALLET_ID,
+            message: messageHash,
+            encodedByHex: true,
+          });
+
+          const signature = signResponse.data?.signature;
+          if (!signature) {
+            return NextResponse.json({ error: "Verifier signing failed" }, { status: 500 });
+          }
+
+          const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes(recipientEmail.toLowerCase()));
+
+          const { error: logError } = await supabase.from("verifier_signatures").insert({
+            escrow_id: escrowId,
+            claimant_address: claimantAddress,
+            recipient_email_hash: recipientEmailHash,
+            signature,
+          });
+          if (logError) {
+            // Log failure is a problem worth knowing about (it breaks the
+            // audit trail), but shouldn't block the user's claim -- the
+            // signature itself is already valid on-chain regardless.
+            console.error("Failed to log verifier signature issuance:", logError.message);
+          }
+
+          return NextResponse.json({ signature, recipientEmailHash }, { status: 200 });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return NextResponse.json({ error: message }, { status: 500 });
