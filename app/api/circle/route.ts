@@ -371,6 +371,37 @@ export async function POST(request: Request) {
         }
       }
 
+      // Generic USDC approve for any spender address, e.g. an EscrowVault.
+      // Kept separate from approveUsdc (which is hardcoded to
+      // schedulerAddress) rather than modifying it, so existing callers
+      // are unaffected.
+      case "approveUsdcForSpender": {
+        const { userToken, walletId, spenderAddress } = params;
+        const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: "0x3600000000000000000000000000000000000000",
+              abiFunctionSignature: "approve(address,uint256)",
+              abiParameters: [spenderAddress, MAX_UINT256],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "approveUsdc": {
         const { userToken, walletId, schedulerAddress } = params;
         const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
