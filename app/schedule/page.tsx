@@ -247,53 +247,113 @@ export default function SchedulePage() {
       return;
     }
 
+    // Recipients found on SnapRoll go through the normal path
+    // (pending_schedules -> PaymentSchedulerV2). Recipients not yet
+    // registered are collected separately -- rather than blocking
+    // submission entirely, they're scheduled against email_scheduled_payments
+    // so auto-execute.mjs can re-check at execution time and fall back to
+    // an EscrowVault escrow if the recipient still hasn't registered by then.
     const resolvedEntries = [];
+    const emailScheduledEntries = [];
     for (const e of entries) {
-      let recipientAddress = e.address;
-      if (!e.address.startsWith("0x")) {
-        const resolveRes = await fetch("/api/schedule", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "resolveEmail", email: e.address }),
+      if (e.address.startsWith("0x")) {
+        resolvedEntries.push({
+          recipient: e.address,
+          amount: toUsdcUnits(e.amount),
+          executeAfter: parseDateField(e.date),
+          label: e.label || null,
+          currency: e.currency || "USDC",
+          slippageBps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
+          intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
         });
-        const resolveData = await resolveRes.json();
-        if (!resolveData.walletAddress) {
-          setSubmitStatus(`"${e.address}" is not registered on SnapRoll`);
-          return;
-        }
-        recipientAddress = resolveData.walletAddress;
+        continue;
       }
-      resolvedEntries.push({
-        recipient: recipientAddress,
-        amount: toUsdcUnits(e.amount),
-        executeAfter: parseDateField(e.date),
-        label: e.label || null,
-        currency: e.currency || "USDC",
-        slippageBps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
-        intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
+
+      const resolveRes = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resolveEmail", email: e.address }),
       });
+      const resolveData = await resolveRes.json();
+
+      if (resolveData.walletAddress) {
+        resolvedEntries.push({
+          recipient: resolveData.walletAddress,
+          amount: toUsdcUnits(e.amount),
+          executeAfter: parseDateField(e.date),
+          label: e.label || null,
+          currency: e.currency || "USDC",
+          slippageBps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
+          intervalSeconds: e.interval ? INTERVAL_SECONDS[e.interval] : null,
+        });
+      } else {
+        // Not registered yet -- schedule via the email path instead of
+        // failing the whole submission.
+        emailScheduledEntries.push({
+          recipientEmail: e.address,
+          amount: toUsdcUnits(e.amount),
+          executeAfter: parseDateField(e.date),
+          label: e.label || null,
+          currency: e.currency || "USDC",
+          slippageBps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
+        });
+      }
     }
-    const payload = resolvedEntries;
+    let submittedCount = 0;
 
-    const res = await fetch("/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "submit",
-        schedulerAddress,
-        entries: payload,
-      }),
-    });
-    const data = await res.json();
+    if (resolvedEntries.length > 0) {
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "submit",
+          schedulerAddress,
+          entries: resolvedEntries,
+        }),
+      });
+      const data = await res.json();
 
-    if (data.error) {
-      setSubmitStatus("Submission failed: " + JSON.stringify(data));
-      return;
+      if (data.error) {
+        setSubmitStatus("Submission failed: " + JSON.stringify(data));
+        return;
+      }
+      submittedCount += data.submitted.length;
     }
 
-    setSubmitStatus(
-      `Submitted (${data.submitted.length} item(s)). Approvers have been notified.`
-    );
+    if (emailScheduledEntries.length > 0) {
+      const escrowVaultAddress = window.localStorage.getItem("myEscrowVault");
+      if (!escrowVaultAddress) {
+        setSubmitStatus(
+          "Some recipients aren't registered on SnapRoll yet, but no escrow vault address " +
+            "was found -- please redeploy your contracts in Settings to get an escrow vault."
+        );
+        return;
+      }
+
+      const emailRes = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "submitEmailScheduled",
+          schedulerAddress,
+          escrowVaultAddress,
+          entries: emailScheduledEntries,
+        }),
+      });
+      const emailData = await emailRes.json();
+
+      if (emailData.error) {
+        setSubmitStatus("Submission failed: " + JSON.stringify(emailData));
+        return;
+      }
+      submittedCount += emailData.submitted.length;
+    }
+
+    const emailNote =
+      emailScheduledEntries.length > 0
+        ? ` (${emailScheduledEntries.length} to unregistered recipient(s), held via escrow if they haven't joined by execution time)`
+        : "";
+    setSubmitStatus(`Submitted (${submittedCount} item(s))${emailNote}. Approvers have been notified.`);
     setManualList([]);
     setCsvEntries([]);
     fetchPending();

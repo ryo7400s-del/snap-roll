@@ -11,6 +11,7 @@ const FACTORY_ADDRESS = "0xD1bc85bFED447d2EfF2AF484592a1f5eFF555bd4";
 // 本来はユーザーごとにSchedulerRegistry等から取得すべきだが、
 // 現状は単一テスト用インスタンスをlocalStorageに保存して使い回す。
 const SCHEDULER_STORAGE_KEY = "myPayrollScheduler";
+const ESCROW_VAULT_STORAGE_KEY = "myEscrowVault";
 
 type WhitelistEntry = {
   address: string;
@@ -69,9 +70,12 @@ export default function SettingPage() {
   const [telegramLink, setTelegramLink] = useState<string | null>(null);
   const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
 
-  const persistScheduler = (addr: string) => {
+  const persistScheduler = (addr: string, escrowVaultAddr?: string) => {
     setSchedulerAddress(addr);
     window.localStorage.setItem(SCHEDULER_STORAGE_KEY, addr);
+    if (escrowVaultAddr) {
+      window.localStorage.setItem(ESCROW_VAULT_STORAGE_KEY, escrowVaultAddr);
+    }
   };
 
   const handleManualSchedulerSave = (addr: string) => {
@@ -107,7 +111,7 @@ export default function SettingPage() {
       return;
     }
     if (checkData.alreadyDeployed) {
-      persistScheduler(checkData.predicted);
+      persistScheduler(checkData.predicted, checkData.predictedEscrowVault);
       setDeployStatus("Using already deployed contract. Registering as approver...");
       await handleRegisterApprover(checkData.predicted);
       setDeploying(false);
@@ -187,7 +191,7 @@ export default function SettingPage() {
       }
 
       setDeployStatus("Deploy successful. Confirming address...");
-      persistScheduler(checkData.predicted);
+      persistScheduler(checkData.predicted, checkData.predictedEscrowVault);
       setDeployStatus("Registering contract...");
       await handleRegisterApprover(checkData.predicted);
       setDeploying(false);

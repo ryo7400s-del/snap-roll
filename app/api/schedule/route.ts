@@ -163,6 +163,89 @@ export async function POST(request: Request) {
         return NextResponse.json({ submitted: data }, { status: 200 });
       }
 
+      // Schedules a payment for a recipient who isn't registered on
+      // SnapRoll yet (only their email is known, no wallet address). Kept
+      // in a separate table from pending_schedules rather than allowing
+      // recipient to be null there, so pending_schedules' existing
+      // wallet-address-required assumption stays intact everywhere else
+      // that reads it (dashboard, exportCsv, auto-execute.mjs, Telegram
+      // notifications, etc). At execution time, auto-execute.mjs re-checks
+      // whether the email has since registered: if so it sends normally,
+      // otherwise it creates an EscrowVault escrow instead.
+      case "submitEmailScheduled": {
+        const { schedulerAddress, escrowVaultAddress, entries } = params;
+        // entries: [{ recipientEmail, amount, executeAfter, currency, slippageBps, label }, ...]
+
+        if (
+          !schedulerAddress ||
+          !escrowVaultAddress ||
+          !Array.isArray(entries) ||
+          entries.length === 0
+        ) {
+          return NextResponse.json(
+            { error: "Missing schedulerAddress, escrowVaultAddress, or entries" },
+            { status: 400 }
+          );
+        }
+
+        const rows = entries.map((e: any) => ({
+          scheduler_address: schedulerAddress,
+          escrow_vault_address: escrowVaultAddress,
+          recipient_email: e.recipientEmail.toLowerCase(),
+          amount: e.amount,
+          execute_after: e.executeAfter,
+          status: "pending",
+          currency: e.currency ?? "USDC",
+          slippage_bps: e.currency === "EURC" ? (e.slippageBps ?? 100) : null,
+          label: e.label ?? null,
+        }));
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .insert(rows)
+          .select();
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        // Reuse the same approver-notification pattern as submit, so
+        // approvers see email-recipient schedules alongside regular ones.
+        const { data: approvers } = await supabase
+          .from("approvers")
+          .select("telegram_chat_id")
+          .eq("scheduler_address", schedulerAddress)
+          .not("telegram_chat_id", "is", null);
+
+        if (approvers && approvers.length > 0) {
+          const approvalUrl = `${APP_BASE_URL}/approve?scheduler=${schedulerAddress}`;
+
+          for (const approver of approvers) {
+            if (!approver.telegram_chat_id) continue;
+
+            for (const row of data) {
+              const rowText =
+                `📋 New payroll schedule approval request (unregistered recipient)\n\n` +
+                `Recipient email: ${row.recipient_email}\n` +
+                `Amount: ${fromUsdcUnits(row.amount)} ${row.currency ?? "USDC"}\n` +
+                `Execute after: ${new Date(row.execute_after * 1000).toISOString()}\n` +
+                `⚠ This recipient has not registered on SnapRoll yet. If they still haven't ` +
+                `by the time this runs, funds will be held in escrow until they register and claim, ` +
+                `or refunded if unclaimed after the escrow expires.`;
+
+              await sendTelegramMessage(approver.telegram_chat_id, rowText, [
+                [
+                  { text: "✅ Open approval page", url: approvalUrl },
+                  { text: "❌ Reject", callback_data: `rejectEmailScheduled:${row.id}` },
+                ],
+              ]);
+            }
+          }
+        }
+
+        return NextResponse.json({ submitted: data }, { status: 200 });
+      }
+
       // 承認ページで一覧を表示するための、保留中スケジュール取得
       case "listPending": {
         const { schedulerAddress } = params;

@@ -42,7 +42,23 @@ export async function POST(request: Request) {
       const chatId = cq.message?.chat?.id?.toString();
       const data: string = cq.data || "";
 
-      if (data.startsWith("reject:")) {
+      if (data.startsWith("rejectEmailScheduled:")) {
+        const scheduleId = data.split(":")[1];
+
+        const { error } = await supabase
+          .from("email_scheduled_payments")
+          .update({ status: "rejected" })
+          .eq("id", scheduleId);
+
+        if (error) {
+          await answerCallbackQuery(cq.id, "Failed to reject. Please try again.");
+        } else {
+          await answerCallbackQuery(cq.id, "Rejected.");
+          if (chatId) {
+            await sendTelegramMessage(chatId, `❌ Schedule ${scheduleId} has been rejected.`);
+          }
+        }
+      } else if (data.startsWith("reject:")) {
         const scheduleId = data.split(":")[1];
 
         const { error } = await supabase
