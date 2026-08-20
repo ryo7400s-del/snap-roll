@@ -69,8 +69,108 @@ async function findScheduleIdByRequestId(schedulerAddress, requestIdHex) {
   return null;
 }
 
+// EscrowVault ABI subset needed here.
+const ESCROW_VAULT_ABI = [
+  "function createEscrow(bytes32 recipientEmailHash, uint256 amount, bool useEURC, uint16 slippageBps, uint64 expiresAt) external returns (uint256 escrowId)",
+];
+
+// How long an escrow stays claimable before anyone can trigger a refund
+// back to the company. 30 days gives a reasonable window for the
+// recipient to register on SnapRoll and claim without funds sitting
+// locked indefinitely if they never do.
+const ESCROW_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
+
+// Processes email_scheduled_payments: schedules created against a
+// recipient email rather than a wallet address, because the recipient
+// hadn't registered on SnapRoll yet at schedule-creation time. This
+// re-checks registration status now, at the scheduled execution time,
+// rather than trusting whatever was true when the schedule was created --
+// the recipient may have joined SnapRoll any time in between.
+async function processEmailScheduledPayments(now) {
+  const { data: dueEmailSchedules, error } = await supabase
+    .from("email_scheduled_payments")
+    .select("*")
+    .eq("status", "approved")
+    .lte("execute_after", now);
+
+  if (error) {
+    console.error("Failed to fetch due email-scheduled payments:", error.message);
+    return;
+  }
+
+  console.log(`Found ${dueEmailSchedules.length} email-scheduled payment(s) due`);
+
+  for (const row of dueEmailSchedules) {
+    console.log(`\nProcessing email-scheduled payment ${row.id} (recipient: ${row.recipient_email})`);
+
+    try {
+      const { data: userRow } = await supabase
+        .from("user_emails")
+        .select("wallet_address")
+        .eq("email", row.recipient_email.toLowerCase())
+        .maybeSingle();
+
+      if (userRow) {
+        // Now registered: hand off to the normal scheduled-payment flow.
+        // Inserted as an already-approved pending_schedules row so the
+        // main loop below picks it up and executes it in this same run
+        // (it queries pending_schedules after this function is called).
+        const { error: insertError } = await supabase.from("pending_schedules").insert({
+          scheduler_address: row.scheduler_address,
+          recipient: userRow.wallet_address,
+          amount: row.amount,
+          execute_after: row.execute_after,
+          status: "approved",
+          currency: row.currency,
+          slippage_bps: row.slippage_bps,
+          label: row.label,
+        });
+
+        if (insertError) {
+          console.error(`  Failed to migrate to pending_schedules: ${insertError.message}`);
+          continue;
+        }
+
+        await supabase.from("email_scheduled_payments").update({ status: "migrated" }).eq("id", row.id);
+        console.log(`  Recipient now registered (${userRow.wallet_address}); migrated to pending_schedules for normal execution`);
+      } else {
+        // Still not registered: lock funds in escrow instead.
+        const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes(row.recipient_email.toLowerCase()));
+        const expiresAt = Math.floor(Date.now() / 1000) + ESCROW_EXPIRY_SECONDS;
+
+        const vault = new ethers.Contract(row.escrow_vault_address, ESCROW_VAULT_ABI, wallet);
+        const tx = await vault.createEscrow(
+          recipientEmailHash,
+          row.amount,
+          row.currency === "EURC",
+          row.slippage_bps ?? 0,
+          expiresAt
+        );
+        console.log(`  Creating escrow... tx: ${tx.hash}`);
+        await tx.wait();
+        console.log(`  Escrow created: ${tx.hash}`);
+
+        const { error: updateError } = await supabase
+          .from("email_scheduled_payments")
+          .update({ status: "escrowed", tx_hash: tx.hash })
+          .eq("id", row.id);
+
+        if (updateError) {
+          console.error(`  Failed to update status to escrowed: ${updateError.message}`);
+        }
+      }
+    } catch (err) {
+      console.error(`  Error processing email-scheduled payment ${row.id}:`, err.message);
+    }
+
+    await sleep(1000);
+  }
+}
+
 async function main() {
   const now = Math.floor(Date.now() / 1000);
+
+  await processEmailScheduledPayments(now);
 
   const { data: dueSchedules, error } = await supabase
     .from("pending_schedules")
