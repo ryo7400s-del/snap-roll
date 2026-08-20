@@ -694,6 +694,41 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      // Creates an escrow on the caller's EscrowVault for a recipient
+      // identified only by email (i.e. not yet registered on SnapRoll).
+      // recipientEmailHash is computed here rather than trusting a
+      // client-supplied hash, so the frontend only ever needs to send the
+      // plain email address.
+      case "createEscrow": {
+        const { userToken, walletId, escrowVaultAddress, recipientEmail, amount, useEURC, slippageBps, expiresAt } =
+          params;
+        const { ethers } = await import("ethers");
+        const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes(recipientEmail.toLowerCase()));
+
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: escrowVaultAddress,
+              abiFunctionSignature: "createEscrow(bytes32,uint256,bool,uint16,uint64)",
+              abiParameters: [recipientEmailHash, amount, useEURC ?? false, slippageBps ?? 0, expiresAt],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json({ ...data.data, recipientEmailHash }, { status: 200 });
+      }
+
       case "createSchedulesBatch": {
         const { userToken, walletId, schedulerAddress, recipients, amounts, executeAfters } = params;
         const res = await fetch(
