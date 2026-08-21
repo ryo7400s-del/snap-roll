@@ -681,6 +681,32 @@ export async function POST(request: Request) {
         }
       }
 
+      case "claimEscrow": {
+        const { userToken, walletId, escrowVaultAddress, escrowId, signature } = params;
+        const res = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify({
+              idempotencyKey: crypto.randomUUID(),
+              walletId,
+              contractAddress: escrowVaultAddress,
+              abiFunctionSignature: "claimEscrow(uint256,bytes)",
+              abiParameters: [escrowId, signature],
+              feeLevel: "MEDIUM",
+            }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) return NextResponse.json(data, { status: res.status });
+        return NextResponse.json(data.data, { status: 200 });
+      }
+
       case "updateScheduleAmount": {
         const { userToken, walletId, schedulerAddress, scheduleId, newAmount } = params;
         const res = await fetch(

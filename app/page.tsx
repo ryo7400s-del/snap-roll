@@ -18,12 +18,130 @@ function formatAmount(amount: string, digits = 2) {
   });
 }
 
+type PendingEscrow = {
+  id: string;
+  escrow_vault_address: string;
+  escrow_id: number;
+  amount: string;
+  currency?: string;
+  label?: string;
+};
+
 export default function Home() {
-  const { deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
+  const { sdk, deviceId, loginResult, wallet, restoring, login } = useCircleAuth();
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const [eurcToUsdcRate, setEurcToUsdcRate] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pendingEscrows, setPendingEscrows] = useState<PendingEscrow[]>([]);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [claimStatus, setClaimStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (!loginResult?.email) return;
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "listMyEscrows", email: loginResult.email }),
+      });
+      const data = await res.json();
+      setPendingEscrows(data.escrows || []);
+    })();
+  }, [loginResult]);
+
+  const handleClaim = async (escrow: PendingEscrow) => {
+    if (!sdk || !loginResult || !wallet) return;
+    setClaimingId(escrow.id);
+    setClaimStatus("Requesting verifier signature...");
+
+    try {
+      const sigRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "issueEscrowClaimSignature",
+          escrowVaultAddress: escrow.escrow_vault_address,
+          escrowId: escrow.escrow_id,
+          claimantAddress: wallet.address,
+          recipientEmail: loginResult.email,
+        }),
+      });
+      const sigData = await sigRes.json();
+      if (!sigData.signature) {
+        setClaimStatus("Failed to get verifier signature: " + JSON.stringify(sigData));
+        setClaimingId(null);
+        return;
+      }
+
+      setClaimStatus("Claiming...");
+      const claimRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "claimEscrow",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          escrowVaultAddress: escrow.escrow_vault_address,
+          escrowId: escrow.escrow_id,
+          signature: sigData.signature,
+        }),
+      });
+      const claimData = await claimRes.json();
+      if (!claimData.challengeId) {
+        setClaimStatus("Claim failed: " + JSON.stringify(claimData));
+        setClaimingId(null);
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+      sdk.execute(claimData.challengeId, async (error: unknown) => {
+        if (error) {
+          setClaimStatus("Claim failed: " + JSON.stringify(error));
+          setClaimingId(null);
+          return;
+        }
+
+        // Same reasoning as elsewhere: the signing callback only confirms
+        // the challenge was signed, not that claimEscrow succeeded
+        // on-chain. Verify before removing it from the pending list.
+        await new Promise((r) => setTimeout(r, 3000));
+
+        const statusRes = await fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "checkTransactionStatus",
+            userToken: loginResult.userToken,
+            walletId: wallet.id,
+          }),
+        });
+        const statusData = await statusRes.json();
+        setClaimingId(null);
+
+        if (statusData.state === "FAILED") {
+          setClaimStatus(
+            `Claim failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+          );
+          return;
+        }
+
+        if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+          setClaimStatus(`Claim status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
+          return;
+        }
+
+        setClaimStatus("Claimed successfully!");
+        setPendingEscrows((prev) => prev.filter((e) => e.id !== escrow.id));
+      });
+    } catch (err) {
+      setClaimStatus("Claim failed: " + String(err));
+      setClaimingId(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -155,6 +273,68 @@ export default function Home() {
                   )}`}
             </div>
           </div>
+
+          {pendingEscrows.length > 0 && (
+            <div
+              style={{
+                background: "#EAF0FF",
+                border: "1px solid #C9D9FF",
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 20,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginBottom: 4 }}>
+                💰 You have {pendingEscrows.length} pending payment{pendingEscrows.length > 1 ? "s" : ""} waiting
+              </div>
+              <div style={{ fontSize: 11, color: "#6B7688", marginBottom: 12 }}>
+                Someone sent you a payment before you joined SnapRoll. Claim it now to receive the funds in your wallet.
+              </div>
+              {pendingEscrows.map((escrow) => (
+                <div
+                  key={escrow.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#FFFFFF",
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220" }}>
+                      {formatAmount(escrow.amount)} {escrow.currency || "USDC"}
+                    </div>
+                    {escrow.label && (
+                      <div style={{ fontSize: 10, color: "#9AA3B2" }}>{escrow.label}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleClaim(escrow)}
+                    disabled={claimingId === escrow.id}
+                    style={{
+                      background: "#2E5CFF",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 16px",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      opacity: claimingId === escrow.id ? 0.6 : 1,
+                    }}
+                  >
+                    {claimingId === escrow.id ? "Claiming..." : "Claim"}
+                  </button>
+                </div>
+              ))}
+              {claimStatus && (
+                <div style={{ fontSize: 11, color: "#6B7688", marginTop: 4 }}>{claimStatus}</div>
+              )}
+            </div>
+          )}
 
           {/* Actions */}
           <div

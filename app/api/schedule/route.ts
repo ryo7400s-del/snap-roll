@@ -287,6 +287,32 @@ export async function POST(request: Request) {
         return NextResponse.json({ pending: data }, { status: 200 });
       }
 
+      // Finds escrows waiting to be claimed by the currently-logged-in
+      // user, by their email address. Only returns status="escrowed" rows
+      // (funds actually locked on-chain) -- "pending"/"approved" rows
+      // haven't reached execution time yet, and "migrated" ones were sent
+      // normally instead since the recipient had already registered by
+      // then.
+      case "listMyEscrows": {
+        const { email } = params;
+        if (!email) {
+          return NextResponse.json({ error: "Missing email" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .select("*")
+          .eq("recipient_email", email.toLowerCase())
+          .eq("status", "escrowed")
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ escrows: data }, { status: 200 });
+      }
+
       case "markApprovedEmailScheduled": {
         const { id } = params;
         if (!id) {
