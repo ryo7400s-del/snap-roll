@@ -330,68 +330,11 @@ export default function SchedulePage() {
         return;
       }
 
-      if (!sdk || !loginResult || !wallet) {
-        setSubmitStatus("Please sign in to approve escrow funding for unregistered recipients.");
-        return;
-      }
-
-      // The company's USDC allowance to the EscrowVault is separate from
-      // its allowance to the Scheduler -- check/request it here rather
-      // than assuming it's already been granted, since there's no other
-      // point in the flow where this would have happened yet.
-      const allowanceRes = await fetch("/api/circle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "checkAllowance",
-          ownerAddress: wallet.address,
-          schedulerAddress: escrowVaultAddress,
-        }),
-      });
-      const allowanceData = await allowanceRes.json();
-      const currentAllowance = BigInt(allowanceData.allowance || "0");
-
-      const emailTotal = emailScheduledEntries.reduce((sum, e) => sum + BigInt(e.amount), BigInt(0));
-
-      if (currentAllowance < emailTotal) {
-        setSubmitStatus("Approving USDC spend for escrow (unregistered recipients)...");
-
-        const approveRes = await fetch("/api/circle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "approveUsdcForSpender",
-            userToken: loginResult.userToken,
-            walletId: wallet.id,
-            spenderAddress: escrowVaultAddress,
-          }),
-        });
-        const approveData = await approveRes.json();
-
-        if (!approveData.challengeId) {
-          setSubmitStatus("Escrow approval failed: " + JSON.stringify(approveData));
-          return;
-        }
-
-        sdk.setAuthentication({
-          userToken: loginResult.userToken,
-          encryptionKey: loginResult.encryptionKey,
-        });
-
-        const approveOk = await new Promise<boolean>((resolve) => {
-          sdk.execute(approveData.challengeId, (error: unknown) => {
-            if (error) {
-              setSubmitStatus("Escrow approval failed: " + JSON.stringify(error));
-              resolve(false);
-              return;
-            }
-            resolve(true);
-          });
-        });
-
-        if (!approveOk) return;
-      }
-
+      // USDC approval for the EscrowVault happens at approval time (in
+      // approve/page.tsx), not here -- mirrors how pending_schedules works:
+      // the creator just records intent in the DB, and whoever approves
+      // (which may be a different person) is the one who actually grants
+      // the on-chain USDC allowance and, eventually, triggers the escrow.
       const emailRes = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -18,6 +18,19 @@ type PendingSchedule = {
   slippage_bps?: number | null;
 };
 
+type PendingEmailSchedule = {
+  id: string;
+  scheduler_address: string;
+  escrow_vault_address: string;
+  recipient_email: string;
+  amount: string;
+  execute_after: number;
+  status: string;
+  label?: string;
+  currency?: string;
+  slippage_bps?: number | null;
+};
+
 function formatUsdc(amount: string) {
   const n = Number(amount) / 1_000_000;
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
@@ -30,6 +43,8 @@ export default function ApprovePage() {
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
+  const [pendingEmailList, setPendingEmailList] = useState<PendingEmailSchedule[]>([]);
+  const [processingEmailId, setProcessingEmailId] = useState<string | null>(null);
   const [eurcQuotes, setEurcQuotes] = useState<Record<string, string>>({});
   const [pendingLoading, setPendingLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -94,6 +109,14 @@ export default function ApprovePage() {
         Object.fromEntries(quotes.filter((q): q is readonly [string, string] => q !== null))
       );
     }
+
+    const emailRes = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "listPendingEmailScheduled", schedulerAddress: address }),
+    });
+    const emailData = await emailRes.json();
+    setPendingEmailList(emailData.pending || []);
   };
   const fetchWhitelist = async (address: string) => {
     if (!address) return;
@@ -320,6 +343,127 @@ export default function ApprovePage() {
       setStatus("Approved and scheduled successfully");
       fetchPending(schedulerAddress);
     });
+  };
+
+  // Approves a schedule created for a not-yet-registered recipient
+  // (email_scheduled_payments). Unlike handleApprove, there's no
+  // createScheduleFor-equivalent step here -- the actual on-chain action
+  // (either migrating to a normal schedule if the recipient has since
+  // registered, or creating an EscrowVault escrow if not) happens later
+  // in auto-execute.mjs at execute_after time. Approval here only needs
+  // to grant the EscrowVault a USDC allowance (in case the escrow path
+  // ends up being taken) and mark the row approved.
+  const handleApproveEmailScheduled = async (item: PendingEmailSchedule) => {
+    if (!sdk || !loginResult || !wallet) {
+      setStatus("Please sign in first");
+      return;
+    }
+
+    if (passkeyEnabled) {
+      setStatus("Verifying passkey...");
+      const ok = await verifyPasskey();
+      if (!ok) {
+        setStatus("Passkey verification failed or cancelled");
+        return;
+      }
+    }
+
+    setProcessingEmailId(item.id);
+    setStatus("Checking USDC allowance for escrow vault...");
+
+    const allowanceRes = await fetch("/api/circle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "checkAllowance",
+        ownerAddress: wallet.address,
+        schedulerAddress: item.escrow_vault_address,
+      }),
+    });
+    const allowanceData = await allowanceRes.json();
+    const currentAllowance = BigInt(allowanceData.allowance || "0");
+    const requiredAmount = BigInt(item.amount);
+
+    if (currentAllowance < requiredAmount) {
+      setStatus("Approving USDC spend for escrow vault...");
+
+      const approveRes = await fetch("/api/circle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approveUsdcForSpender",
+          userToken: loginResult.userToken,
+          walletId: wallet.id,
+          spenderAddress: item.escrow_vault_address,
+        }),
+      });
+      const approveData = await approveRes.json();
+
+      if (!approveData.challengeId) {
+        setStatus("Approve failed: " + JSON.stringify(approveData));
+        setProcessingEmailId(null);
+        return;
+      }
+
+      sdk.setAuthentication({
+        userToken: loginResult.userToken,
+        encryptionKey: loginResult.encryptionKey,
+      });
+
+      const approveOk = await new Promise<boolean>((resolve) => {
+        sdk.execute(approveData.challengeId, async (error: unknown) => {
+          if (error) {
+            setStatus("Approve failed: " + JSON.stringify(error));
+            resolve(false);
+            return;
+          }
+
+          await new Promise((r) => setTimeout(r, 3000));
+
+          const statusRes = await fetch("/api/circle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "checkTransactionStatus",
+              userToken: loginResult.userToken,
+              walletId: wallet.id,
+            }),
+          });
+          const statusData = await statusRes.json();
+
+          if (statusData.state === "FAILED") {
+            setStatus(
+              `USDC approve failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
+            );
+            resolve(false);
+            return;
+          }
+
+          if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
+            setStatus(`USDC approve status unclear: ${statusData.state || "unknown"}. Please check ArcScan before retrying.`);
+            resolve(false);
+            return;
+          }
+
+          resolve(true);
+        });
+      });
+
+      if (!approveOk) {
+        setProcessingEmailId(null);
+        return;
+      }
+    }
+
+    await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "markApprovedEmailScheduled", id: item.id }),
+    });
+
+    setProcessingEmailId(null);
+    setStatus("Approved. Will send normally if the recipient registers by execution time, or hold in escrow otherwise.");
+    fetchPending(schedulerAddress);
   };
 
   // 選択した複数件を1回のUSDC approve + 1回のcreateSchedulesForBatchでまとめて承認する。
@@ -729,6 +873,73 @@ export default function ApprovePage() {
               </div>
               );
             })
+          )}
+
+          {pendingEmailList.length > 0 && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginTop: 20, marginBottom: 10 }}>
+                Pending (unregistered recipients) ({pendingEmailList.length})
+              </div>
+              {pendingEmailList.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #EEF1F6",
+                    borderRadius: 16,
+                    padding: 14,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                      {item.label || item.recipient_email}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1220" }}>
+                      ${formatUsdc(item.amount)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#8A5A00",
+                      background: "#FFF4E5",
+                      borderRadius: 8,
+                      padding: "3px 8px",
+                      display: "inline-block",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Not yet registered on SnapRoll
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 12 }}>
+                    {item.recipient_email} · {item.currency || "USDC"} ·{" "}
+                    {new Date(item.execute_after * 1000).toLocaleDateString()}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => handleApproveEmailScheduled(item)}
+                      disabled={processingEmailId === item.id}
+                      style={{
+                        flex: 1,
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "10px 0",
+                        background: "#2E5CFF",
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: processingEmailId === item.id ? 0.6 : 1,
+                      }}
+                    >
+                      {processingEmailId === item.id ? "Processing..." : "Approve"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
           )}
         </>
       )}

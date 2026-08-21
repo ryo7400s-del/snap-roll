@@ -267,6 +267,49 @@ export async function POST(request: Request) {
         return NextResponse.json({ pending: data }, { status: 200 });
       }
 
+      case "listPendingEmailScheduled": {
+        const { schedulerAddress } = params;
+        if (!schedulerAddress) {
+          return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ pending: data }, { status: 200 });
+      }
+
+      case "markApprovedEmailScheduled": {
+        const { id } = params;
+        if (!id) {
+          return NextResponse.json({ error: "Missing id" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .update({
+            status: "approved",
+            approved_at: new Date().toISOString(),
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json(data, { status: 200 });
+      }
+
       // 承認処理：ステータス更新＋tx_hash記録（オンチェーン実行自体はフロントで実施済みの前提）
       case "markApproved": {
         const { id, txHash } = params;
