@@ -194,10 +194,81 @@ async function processEmailScheduledPayments(now) {
   }
 }
 
+// EscrowVault ABI subset needed for refund processing.
+const ESCROW_VAULT_REFUND_ABI = [
+  "function refundExpiredEscrow(uint256 escrowId) external",
+  "function getEscrow(uint256 escrowId) view returns (tuple(address sender, bytes32 recipientEmailHash, uint256 amount, bool useEURC, uint16 slippageBps, uint64 createdAt, uint64 expiresAt, bool claimed, bool refunded))",
+];
+
+// Refunds escrows whose expiresAt has passed and were never claimed.
+// Runs after processEmailScheduledPayments/the main schedule loop so any
+// escrow just created this same run isn't immediately eligible (it won't
+// be, since expiresAt is always set in the future at creation time, but
+// this ordering also means status=escrowed rows created earlier in DB
+// history get picked up here consistently).
+async function processExpiredEscrowRefunds(now) {
+  const { data: escrowedRows, error } = await supabase
+    .from("email_scheduled_payments")
+    .select("*")
+    .eq("status", "escrowed")
+    .not("escrow_id", "is", null);
+
+  if (error) {
+    console.error("Failed to fetch escrowed payments:", error.message);
+    return;
+  }
+
+  console.log(`Checking ${escrowedRows.length} escrowed payment(s) for expiry`);
+
+  for (const row of escrowedRows) {
+    try {
+      const vault = new ethers.Contract(row.escrow_vault_address, ESCROW_VAULT_REFUND_ABI, provider);
+      const escrow = await vault.getEscrow(row.escrow_id);
+
+      if (escrow.claimed || escrow.refunded) {
+        // Already claimed by the recipient, or already refunded in a
+        // previous run -- just sync the DB status if it's stale.
+        if (escrow.claimed && row.status !== "claimed") {
+          await supabase.from("email_scheduled_payments").update({ status: "claimed" }).eq("id", row.id);
+        } else if (escrow.refunded && row.status !== "refunded") {
+          await supabase.from("email_scheduled_payments").update({ status: "refunded" }).eq("id", row.id);
+        }
+        continue;
+      }
+
+      if (Number(escrow.expiresAt) > now) {
+        // Not expired yet.
+        continue;
+      }
+
+      console.log(`\nEscrow ${row.escrow_id} on ${row.escrow_vault_address} has expired, refunding...`);
+      const walletWithSigner = new ethers.Contract(row.escrow_vault_address, ESCROW_VAULT_REFUND_ABI, wallet);
+      const tx = await walletWithSigner.refundExpiredEscrow(row.escrow_id);
+      console.log(`  Refunding... tx: ${tx.hash}`);
+      await tx.wait();
+      console.log(`  Refunded: ${tx.hash}`);
+
+      const { error: updateError } = await supabase
+        .from("email_scheduled_payments")
+        .update({ status: "refunded", tx_hash: tx.hash })
+        .eq("id", row.id);
+
+      if (updateError) {
+        console.error(`  Failed to update status to refunded: ${updateError.message}`);
+      }
+    } catch (err) {
+      console.error(`  Error processing refund for row ${row.id}:`, err.message);
+    }
+
+    await sleep(1000);
+  }
+}
+
 async function main() {
   const now = Math.floor(Date.now() / 1000);
 
   await processEmailScheduledPayments(now);
+  await processExpiredEscrowRefunds(now);
 
   const { data: dueSchedules, error } = await supabase
     .from("pending_schedules")
