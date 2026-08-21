@@ -72,7 +72,29 @@ async function findScheduleIdByRequestId(schedulerAddress, requestIdHex) {
 // EscrowVault ABI subset needed here.
 const ESCROW_VAULT_ABI = [
   "function createEscrow(bytes32 recipientEmailHash, uint256 amount, bool useEURC, uint16 slippageBps, uint64 expiresAt) external returns (uint256 escrowId)",
+  "event EscrowCreated(uint256 indexed escrowId, address indexed sender, bytes32 recipientEmailHash, uint256 amount, bool useEURC, uint64 expiresAt)",
 ];
+const escrowVaultInterface = new ethers.Interface(ESCROW_VAULT_ABI);
+
+// createEscrow's return value isn't directly readable from a sent
+// transaction (only from a static call or by decoding logs), and the
+// claim flow needs to know exactly which escrowId was assigned on-chain
+// to build the signature message later. Decode it from the EscrowCreated
+// event in the receipt instead of re-deriving/guessing it.
+function findEscrowIdFromReceipt(receipt) {
+  for (const log of receipt.logs) {
+    try {
+      const parsed = escrowVaultInterface.parseLog(log);
+      if (parsed?.name === "EscrowCreated") {
+        return Number(parsed.args.escrowId);
+      }
+    } catch {
+      // Not a log this ABI recognizes (e.g. a Transfer event from the
+      // USDC transferFrom pull) -- skip it.
+    }
+  }
+  return null;
+}
 
 // How long an escrow stays claimable before anyone can trigger a refund
 // back to the company. 30 days gives a reasonable window for the
@@ -147,12 +169,17 @@ async function processEmailScheduledPayments(now) {
           expiresAt
         );
         console.log(`  Creating escrow... tx: ${tx.hash}`);
-        await tx.wait();
-        console.log(`  Escrow created: ${tx.hash}`);
+        const escrowReceipt = await tx.wait();
+        const escrowId = findEscrowIdFromReceipt(escrowReceipt);
+        console.log(`  Escrow created: ${tx.hash} (escrowId: ${escrowId})`);
+
+        if (escrowId === null) {
+          console.error(`  Could not find EscrowCreated event in receipt -- escrow_id will be unset, claiming will not work until this is fixed manually`);
+        }
 
         const { error: updateError } = await supabase
           .from("email_scheduled_payments")
-          .update({ status: "escrowed", tx_hash: tx.hash })
+          .update({ status: "escrowed", tx_hash: tx.hash, escrow_id: escrowId })
           .eq("id", row.id);
 
         if (updateError) {
