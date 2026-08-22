@@ -30,6 +30,17 @@ type PendingSchedule = {
   interval_seconds?: number | null;
 };
 
+type PendingEmailSchedule = {
+  id: string;
+  scheduler_address: string;
+  recipient_email: string;
+  amount: string;
+  execute_after: number;
+  status: string;
+  label?: string;
+  currency?: string;
+};
+
 const INTERVAL_SECONDS: Record<string, number> = {
   weekly: 7 * 24 * 60 * 60,
   monthly: 30 * 24 * 60 * 60,
@@ -80,6 +91,7 @@ export default function SchedulePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [pendingList, setPendingList] = useState<PendingSchedule[]>([]);
+  const [pendingEmailList, setPendingEmailList] = useState<PendingEmailSchedule[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
 
@@ -113,6 +125,14 @@ export default function SchedulePage() {
     const data = await res.json();
     setPendingList(data.pending || []);
     setPendingLoading(false);
+
+    const emailRes = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "listPendingEmailScheduled", schedulerAddress }),
+    });
+    const emailData = await emailRes.json();
+    setPendingEmailList(emailData.pending || []);
   };
 
   useEffect(() => {
@@ -769,6 +789,41 @@ export default function SchedulePage() {
                 </div>
               </div>
             ))
+          )}
+
+          {pendingEmailList.length > 0 && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", marginTop: 20, marginBottom: 10 }}>
+                Pending (unregistered recipients) ({pendingEmailList.length})
+              </div>
+              {pendingEmailList.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #EEF1F6",
+                    borderRadius: 14,
+                    padding: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220" }}>
+                    {item.label || item.recipient_email}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9AA3B2" }}>
+                    {fromUsdcUnits(item.amount)} {item.currency || "USDC"} ·{" "}
+                    {new Date(item.execute_after * 1000).toLocaleDateString()}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#8A5A00", marginTop: 6 }}>
+                    Status: {item.status}
+                    {item.status === "pending" && " (not yet registered on SnapRoll)"}
+                    {item.status === "escrowed" && " (funds locked in escrow, awaiting registration)"}
+                    {item.status === "migrated" && " (recipient registered, sent normally)"}
+                    {item.status === "refunded" && " (expired, refunded to you)"}
+                  </div>
+                </div>
+              ))}
+            </>
           )}
         </>
       )}
