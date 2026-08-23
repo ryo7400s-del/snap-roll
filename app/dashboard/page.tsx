@@ -394,6 +394,7 @@ export default function DashboardPage() {
   //     would duplicate that entry on the calendar.
   const EMAIL_STATUS_MAP: Record<string, string> = {
     pending: "pending",
+    approved: "approved",
     escrowed: "approved",
     refunded: "rejected",
   };
