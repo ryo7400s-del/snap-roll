@@ -17,6 +17,17 @@ type ScheduleRow = {
   interval_seconds?: number | null;
 };
 
+type EmailScheduleRow = {
+  id: string;
+  scheduler_address: string;
+  recipient_email: string;
+  amount: string;
+  execute_after: number;
+  status: string;
+  label?: string;
+  currency?: string;
+};
+
 type ExecutionRow = {
   id: string;
   schedule_id: string;
@@ -66,6 +77,7 @@ export default function DashboardPage() {
 
   const [schedulerAddress, setSchedulerAddress] = useState("");
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [emailSchedules, setEmailSchedules] = useState<EmailScheduleRow[]>([]);
   const [executions, setExecutions] = useState<ExecutionRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => {
@@ -103,6 +115,20 @@ export default function DashboardPage() {
       });
       const execData = await execRes.json();
       setExecutions(execData.executions || []);
+
+      // email_scheduled_payments rows (recipients not yet registered when
+      // the schedule was created) live in a separate table entirely --
+      // see the schedule/approve page comments for why they're kept
+      // apart from pending_schedules. Fetch them here too so the
+      // calendar shows them alongside normal schedules rather than
+      // silently omitting anything sent to an unregistered email.
+      const emailRes = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "listAllEmailScheduled", schedulerAddress }),
+      });
+      const emailData = await emailRes.json();
+      setEmailSchedules(emailData.schedules || []);
 
       setLoading(false);
     })();
@@ -353,6 +379,38 @@ export default function DashboardPage() {
       status: "executed",
       currency: e.currency ?? undefined,
       tx_hash: e.tx_hash,
+    });
+  }
+
+  // Merge in email_scheduled_payments (recipients not yet registered
+  // when the schedule was created). Status mapping to the existing
+  // 4-color scheme:
+  //   pending  -> pending (orange): not yet approved
+  //   escrowed -> approved (blue): approved, funds locked pending claim
+  //   refunded -> rejected (red): expired unclaimed, returned to sender
+  //   migrated: skipped here -- once the recipient registers,
+  //     auto-execute.mjs inserts a corresponding row into pending_schedules
+  //     (or schedule_executions once it runs), so showing it again here
+  //     would duplicate that entry on the calendar.
+  const EMAIL_STATUS_MAP: Record<string, string> = {
+    pending: "pending",
+    escrowed: "approved",
+    refunded: "rejected",
+  };
+  for (const es of emailSchedules) {
+    const mappedStatus = EMAIL_STATUS_MAP[es.status];
+    if (!mappedStatus) continue;
+    const key = dateKey(es.execute_after);
+    if (!schedulesByDate.has(key)) schedulesByDate.set(key, []);
+    schedulesByDate.get(key)!.push({
+      id: `email-${es.id}`,
+      scheduler_address: es.scheduler_address,
+      recipient: es.recipient_email,
+      amount: es.amount,
+      execute_after: es.execute_after,
+      status: mappedStatus,
+      label: es.label,
+      currency: es.currency,
     });
   }
 

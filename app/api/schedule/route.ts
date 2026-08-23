@@ -442,6 +442,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ schedules: data }, { status: 200 });
       }
 
+      case "listAllEmailScheduled": {
+        const { schedulerAddress } = params;
+        if (!schedulerAddress) {
+          return NextResponse.json({ error: "Missing schedulerAddress" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .order("execute_after", { ascending: true });
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ schedules: data }, { status: 200 });
+      }
+
       // ダッシュボードのカレンダー表示用: schedule_executionsから過去の
       // 実行履歴を取得する。pending_schedulesのexecute_afterは繰り返し
       // スケジュールの「次回予定日」しか保持していないため、過去に
