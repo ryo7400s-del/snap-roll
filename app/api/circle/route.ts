@@ -43,11 +43,6 @@ export async function POST(request: Request) {
     }
 
     switch (action) {
-      case "debugLog": {
-        console.log("CLIENT DEBUG:", JSON.stringify(params.payload));
-        return NextResponse.json({ ok: true }, { status: 200 });
-      }
-
       case "createDeviceToken": {
         const { deviceId } = params;
         const res = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users/social/token`, {
@@ -711,7 +706,6 @@ export async function POST(request: Request) {
           }
         );
         const data = await res.json();
-        console.log("claimEscrow raw response:", JSON.stringify(data));
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
       }

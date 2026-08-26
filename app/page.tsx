@@ -18,6 +18,20 @@ function formatAmount(amount: string, digits = 2) {
   });
 }
 
+// Escrow amounts come from the DB as raw on-chain integers (6 decimals for
+// both USDC and EURC), unlike Circle's getBalance which already returns a
+// human-readable decimal string. Dividing by 1_000_000 here is what was
+// missing -- without it, e.g. 0.3 USDC (stored as 300000) rendered as
+// "300,000.00".
+function formatEscrowAmount(amount: string) {
+  const n = Number(amount) / 1_000_000;
+  if (Number.isNaN(n)) return "0.00";
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 type PendingEscrow = {
   id: string;
   escrow_vault_address: string;
@@ -105,43 +119,30 @@ export default function Home() {
           return;
         }
 
-        // TEMP DEBUG: send sdk.execute result to server log
-        fetch("/api/circle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "debugLog", payload: result }),
-        }).catch(() => {});
+        setClaimingId(null);
 
-        // Same reasoning as elsewhere: the signing callback only confirms
-        // the challenge was signed, not that claimEscrow succeeded
-        // on-chain. Verify before removing it from the pending list.
-        await new Promise((r) => setTimeout(r, 3000));
+        // sdk.execute itself returns status: "COMPLETE" once the contract
+        // execution has confirmed on-chain -- this is Circle's own
+        // authoritative signal (COMPLETE = succeeded and finalized,
+        // FAILED = reverted). The previous implementation instead called
+        // checkTransactionStatus afterward to look up the wallet's most
+        // recent transaction, but that could pick up an unrelated
+        // transaction if anything else fired around the same time, which
+        // is what caused the claimed card to sometimes never disappear.
+        if (result?.status !== "COMPLETE") {
+          setClaimStatus(`Claim status unclear: ${result?.status || "unknown"}. Please check ArcScan before assuming it worked.`);
+          return;
+        }
 
-        const statusRes = await fetch("/api/circle", {
+        await fetch("/api/schedule", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "checkTransactionStatus",
-            userToken: loginResult.userToken,
-            walletId: wallet.id,
+            action: "markClaimed",
+            id: escrow.id,
           }),
         });
-        const statusData = await statusRes.json();
-        setClaimingId(null);
 
-        if (statusData.state === "FAILED") {
-          setClaimStatus(
-            `Claim failed on-chain: ${statusData.errorReason || "unknown"} (${statusData.errorDetails || ""})`
-          );
-          return;
-        }
-
-        if (statusData.state !== "COMPLETE" && statusData.state !== "CONFIRMED") {
-          setClaimStatus(`Claim status unclear: ${statusData.state || "unknown"}. Please check ArcScan before assuming it worked.`);
-          return;
-        }
-
-        setClaimStatus("Claimed successfully!");
         setPendingEscrows((prev) => prev.filter((e) => e.id !== escrow.id));
       });
     } catch (err) {
@@ -312,7 +313,7 @@ export default function Home() {
                 >
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1220" }}>
-                      {formatAmount(escrow.amount)} {escrow.currency || "USDC"}
+                      {formatEscrowAmount(escrow.amount)} {escrow.currency || "USDC"}
                     </div>
                     {escrow.label && (
                       <div style={{ fontSize: 10, color: "#9AA3B2" }}>{escrow.label}</div>

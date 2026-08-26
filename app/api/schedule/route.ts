@@ -585,6 +585,23 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: executionError.message }, { status: 500 });
         }
 
+        // email_scheduled_payments: unregistered-recipient schedules that
+        // have since been claimed. These went through EscrowVault.claimEscrow,
+        // not PaymentSchedulerV2.executeSchedule, so they cannot be verified
+        // via the same ScheduleExecuted event lookup below -- treat them as
+        // pre-verified once claimed, since reaching that status already
+        // required a valid verifier signature checked on-chain.
+        const { data: emailClaimedData, error: emailClaimedError } = await supabase
+          .from("email_scheduled_payments")
+          .select("*")
+          .eq("scheduler_address", schedulerAddress)
+          .eq("status", "claimed")
+          .order("execute_after", { ascending: true });
+
+        if (emailClaimedError) {
+          return NextResponse.json({ error: emailClaimedError.message }, { status: 500 });
+        }
+
         // schedule_executions doesn't store its own label, but each row
         // has schedule_id pointing back to the pending_schedules row it
         // came from, so look those labels up in one batch query.
@@ -608,7 +625,23 @@ export async function POST(request: Request) {
           scheduler_address: e.scheduler_address,
         }));
 
-        const data = [...(oneTimeData || []), ...executionRows].sort(
+        // email_scheduled_payments rows normalized the same way. recipient
+        // here is an email address rather than a 0x address; tx_hash comes
+        // from claim_tx_hash (set by markClaimed) since that is the
+        // transaction that actually moved funds to the recipient.
+        const emailClaimedRows = (emailClaimedData || []).map((es: any) => ({
+          label: es.label ?? null,
+          recipient: es.recipient_email,
+          amount: es.amount,
+          currency: es.currency,
+          execute_after: es.execute_after,
+          status: "claimed",
+          tx_hash: es.claim_tx_hash || null,
+          scheduler_address: es.scheduler_address,
+          _skipVerification: true,
+        }));
+
+        const data = [...(oneTimeData || []), ...executionRows, ...emailClaimedRows].sort(
           (a, b) => a.execute_after - b.execute_after
         );
 
@@ -632,7 +665,14 @@ export async function POST(request: Request) {
           let actualEurcReceived = "";
           let swapRate = "";
 
-          if (row.tx_hash) {
+          if ((row as any)._skipVerification) {
+            // EscrowVault.claimEscrow flow: reaching status="claimed"
+            // already required passing verifier signature checks
+            // on-chain, and there is no ScheduleExecuted event to look
+            // for here (different contract, different event), so skip
+            // the receipt lookup below entirely.
+            verified = row.tx_hash ? "verified_via_claim" : "no_tx_hash";
+          } else if (row.tx_hash) {
             try {
               const receipt = await provider.getTransactionReceipt(row.tx_hash);
               if (!receipt) {

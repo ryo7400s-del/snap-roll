@@ -41,7 +41,7 @@ type ExecutionRow = {
 
 function formatUsdc(amount: string) {
   const n = Number(amount) / 1_000_000;
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function dateKey(unixSeconds: number) {
@@ -395,7 +395,8 @@ export default function DashboardPage() {
   const EMAIL_STATUS_MAP: Record<string, string> = {
     pending: "pending",
     approved: "approved",
-    escrowed: "approved",
+    escrowed: "executed",
+    claimed: "executed",
     refunded: "rejected",
   };
   for (const es of emailSchedules) {
