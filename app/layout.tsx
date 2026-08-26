@@ -25,6 +25,9 @@ export default function RootLayout({
           <div style={{ flex: 1, overflowY: "auto" }}>{children}</div>
           <TabBar />
         </div>
+        {/* TEMP DEBUG: mobile devtools console, remove after debugging */}
+        <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+        <script dangerouslySetInnerHTML={{ __html: "eruda.init();" }} />
       </body>
     </html>
   );
