@@ -706,6 +706,7 @@ export async function POST(request: Request) {
           }
         );
         const data = await res.json();
+        console.log("claimEscrow raw response:", JSON.stringify(data));
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         return NextResponse.json(data.data, { status: 200 });
       }
