@@ -98,12 +98,19 @@ export default function Home() {
         userToken: loginResult.userToken,
         encryptionKey: loginResult.encryptionKey,
       });
-      sdk.execute(claimData.challengeId, async (error: unknown) => {
+      sdk.execute(claimData.challengeId, async (error: unknown, result?: any) => {
         if (error) {
           setClaimStatus("Claim failed: " + JSON.stringify(error));
           setClaimingId(null);
           return;
         }
+
+        // TEMP DEBUG: send sdk.execute result to server log
+        fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "debugLog", payload: result }),
+        }).catch(() => {});
 
         // Same reasoning as elsewhere: the signing callback only confirms
         // the challenge was signed, not that claimEscrow succeeded

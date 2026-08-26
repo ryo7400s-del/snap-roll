@@ -43,6 +43,11 @@ export async function POST(request: Request) {
     }
 
     switch (action) {
+      case "debugLog": {
+        console.log("CLIENT DEBUG:", JSON.stringify(params.payload));
+        return NextResponse.json({ ok: true }, { status: 200 });
+      }
+
       case "createDeviceToken": {
         const { deviceId } = params;
         const res = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users/social/token`, {
