@@ -540,6 +540,12 @@ export async function POST(request: Request) {
             state: latestTx?.state,
             errorReason: latestTx?.errorReason,
             errorDetails: latestTx?.errorDetails,
+            // txHash is the actual on-chain transaction hash (0x...);
+            // id is Circle's own internal transaction record ID and is
+            // not verifiable on a block explorer, so txHash is what
+            // should be stored/displayed anywhere this needs to link to
+            // ArcScan or similar.
+            txHash: latestTx?.txHash,
             txId: latestTx?.id,
           },
           { status: 200 }

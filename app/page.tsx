@@ -151,7 +151,7 @@ export default function Home() {
             }),
           });
           const statusData = await statusRes.json();
-          claimTxHash = statusData.txId || null;
+          claimTxHash = statusData.txHash || null;
         } catch {
           // best-effort only; markClaimed still proceeds without a hash
         }
