@@ -579,15 +579,38 @@ export default function SchedulePage() {
                   </div>
                 </div>
               )}
-              <select
-                value={manualEntry.interval}
-                onChange={(e) => setManualEntry({ ...manualEntry, interval: e.target.value as any })}
-                style={{ width: "100%", border: "1px solid #EEF1F6", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 8, background: "#F7F9FC" }}
-              >
-                <option value="">One-time</option>
-                <option value="weekly">Repeat weekly</option>
-                <option value="monthly">Repeat monthly</option>
-              </select>
+              {(() => {
+                const isEmailRecipient =
+                  manualEntry.address.length > 0 && !manualEntry.address.trim().toLowerCase().startsWith("0x");
+                return (
+                  <>
+                    <select
+                      value={isEmailRecipient ? "" : manualEntry.interval}
+                      disabled={isEmailRecipient}
+                      onChange={(e) => setManualEntry({ ...manualEntry, interval: e.target.value as any })}
+                      style={{
+                        width: "100%",
+                        border: "1px solid #EEF1F6",
+                        borderRadius: 10,
+                        padding: 10,
+                        fontSize: 13,
+                        marginBottom: isEmailRecipient ? 4 : 8,
+                        background: isEmailRecipient ? "#F0F1F4" : "#F7F9FC",
+                        color: isEmailRecipient ? "#9AA3B2" : undefined,
+                      }}
+                    >
+                      <option value="">One-time</option>
+                      <option value="weekly">Repeat weekly</option>
+                      <option value="monthly">Repeat monthly</option>
+                    </select>
+                    {isEmailRecipient && (
+                      <div style={{ fontSize: 11, color: "#9AA3B2", marginBottom: 8 }}>
+                        Recurring payments aren't supported yet for recipients who haven't registered on SnapRoll. This will be sent as a one-time payment.
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 <button
                   type="button"
