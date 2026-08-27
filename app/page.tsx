@@ -50,6 +50,12 @@ export default function Home() {
   const [pendingEscrows, setPendingEscrows] = useState<PendingEscrow[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
+  // Whether the wallet has enough native balance to pay gas for a claim.
+  // null = not checked yet (e.g. no wallet available), true/false once known.
+  // Checked once wallet + pendingEscrows are both available, since a brand
+  // new wallet claiming its first-ever escrow is exactly the case with zero
+  // native balance -- see prior discussion on Arc's USDC-as-gas model.
+  const [hasSufficientGas, setHasSufficientGas] = useState<boolean | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -63,6 +69,23 @@ export default function Home() {
       setPendingEscrows(data.escrows || []);
     })();
   }, [loginResult]);
+
+  useEffect(() => {
+    (async () => {
+      if (!wallet?.address || pendingEscrows.length === 0) return;
+      try {
+        const res = await fetch("/api/circle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "checkNativeBalance", address: wallet.address }),
+        });
+        const data = await res.json();
+        setHasSufficientGas(typeof data.sufficient === "boolean" ? data.sufficient : null);
+      } catch {
+        setHasSufficientGas(null);
+      }
+    })();
+  }, [wallet, pendingEscrows]);
 
   const handleClaim = async (escrow: PendingEscrow) => {
     if (!sdk || !loginResult || !wallet) return;
@@ -349,23 +372,43 @@ export default function Home() {
                       <div style={{ fontSize: 10, color: "#9AA3B2" }}>{escrow.label}</div>
                     )}
                   </div>
-                  <button
-                    onClick={() => handleClaim(escrow)}
-                    disabled={claimingId === escrow.id}
-                    style={{
-                      background: "#2E5CFF",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "8px 16px",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      opacity: claimingId === escrow.id ? 0.6 : 1,
-                    }}
-                  >
-                    {claimingId === escrow.id ? "Claiming..." : "Claim"}
-                  </button>
+                  {hasSufficientGas === false ? (
+                    <button
+                      onClick={() => window.open("https://faucet.circle.com/", "_blank")}
+                      style={{
+                        background: "#FFF3E0",
+                        border: "1px solid #F5A623",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        color: "#B8730A",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        textAlign: "right",
+                        maxWidth: 140,
+                      }}
+                    >
+                      Need gas -- get USDC
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleClaim(escrow)}
+                      disabled={claimingId === escrow.id}
+                      style={{
+                        background: "#2E5CFF",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "8px 16px",
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        opacity: claimingId === escrow.id ? 0.6 : 1,
+                      }}
+                    >
+                      {claimingId === escrow.id ? "Claiming..." : "Claim"}
+                    </button>
+                  )}
                 </div>
               ))}
               {claimStatus && (

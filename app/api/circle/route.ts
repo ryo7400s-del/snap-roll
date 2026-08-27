@@ -116,6 +116,34 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      // Checks the wallet'''s native balance (18 decimals -- distinct from
+      // the 6-decimal ERC-20 USDC returned by getBalance above). This is
+      // what pays for gas on Arc, so a newly-created wallet with escrowed
+      // funds waiting to be claimed but zero native balance can'''t yet
+      // afford to call claimEscrow. Used to warn the user and point them
+      // to the faucet before they attempt a claim that would otherwise
+      // fail with an opaque ESTIMATION_ERROR.
+      case "checkNativeBalance": {
+        const { address } = params;
+        if (!address) {
+          return NextResponse.json({ error: "Missing address" }, { status: 400 });
+        }
+        const { ethers } = await import("ethers");
+        const provider = new ethers.JsonRpcProvider("https://arc-testnet.drpc.org");
+        const balance = await provider.getBalance(address);
+        // A conservative threshold above what claimEscrow typically costs
+        // (observed network fees around 0.002-0.003 USDC in testing),
+        // leaving headroom for fee fluctuation.
+        const threshold = ethers.parseUnits("0.01", 18);
+        return NextResponse.json(
+          {
+            balance: balance.toString(),
+            sufficient: balance >= threshold,
+          },
+          { status: 200 }
+        );
+      }
+
 
 
       case "getWhitelist": {
