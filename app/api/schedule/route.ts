@@ -313,6 +313,30 @@ export async function POST(request: Request) {
         return NextResponse.json({ escrows: data }, { status: 200 });
       }
 
+      case "markClaimed": {
+        const { id, txHash } = params;
+        if (!id) {
+          return NextResponse.json({ error: "Missing id" }, { status: 400 });
+        }
+
+        const { data, error } = await supabase
+          .from("email_scheduled_payments")
+          .update({
+            status: "claimed",
+            claimed_at: new Date().toISOString(),
+            claim_tx_hash: txHash ?? null,
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json(data, { status: 200 });
+      }
+
       case "markApprovedEmailScheduled": {
         const { id } = params;
         if (!id) {
