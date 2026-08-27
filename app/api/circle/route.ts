@@ -535,7 +535,6 @@ export async function POST(request: Request) {
         const data = await res.json();
         if (!res.ok) return NextResponse.json(data, { status: res.status });
         const latestTx = data.data?.transactions?.[0];
-        console.log("checkTransactionStatus latestTx:", JSON.stringify(latestTx));
         return NextResponse.json(
           {
             state: latestTx?.state,
