@@ -139,6 +139,13 @@ export default function Home() {
         // not to re-decide success/failure, so an imprecise match here
         // (e.g. if something else briefly raced it) only affects which
         // hash gets recorded, not whether the card disappears.
+        // txHash isn't assigned until the transaction leaves QUEUED and
+        // reaches the chain, which lags slightly behind sdk.execute's
+        // COMPLETE callback. Wait briefly before looking it up -- this
+        // delay only affects whether a hash gets captured for the CSV
+        // export, not the COMPLETE check above that already confirmed
+        // success.
+        await new Promise((r) => setTimeout(r, 4000));
         let claimTxHash: string | null = null;
         try {
           const statusRes = await fetch("/api/circle", {
