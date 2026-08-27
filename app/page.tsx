@@ -134,12 +134,35 @@ export default function Home() {
           return;
         }
 
+        // result.status === "COMPLETE" already confirms success -- this
+        // extra lookup is only to capture the tx hash for the CSV export,
+        // not to re-decide success/failure, so an imprecise match here
+        // (e.g. if something else briefly raced it) only affects which
+        // hash gets recorded, not whether the card disappears.
+        let claimTxHash: string | null = null;
+        try {
+          const statusRes = await fetch("/api/circle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "checkTransactionStatus",
+              userToken: loginResult.userToken,
+              walletId: wallet.id,
+            }),
+          });
+          const statusData = await statusRes.json();
+          claimTxHash = statusData.txId || null;
+        } catch {
+          // best-effort only; markClaimed still proceeds without a hash
+        }
+
         await fetch("/api/schedule", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "markClaimed",
             id: escrow.id,
+            txHash: claimTxHash,
           }),
         });
 
